@@ -1,0 +1,34 @@
+!SESSION 2026-03-18 18:01:38.282 -----------------------------------------------
+eclipse.buildId=Version 1.19.0
+java.version=21.0.3
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=win32, ARCH=x86_64, WS=win32, NL=ko_KR
+Command-line arguments:  -os win32 -ws win32 -arch x86_64 -data C:\Users\YOOCHAN\Desktop\ongoing_projects\ARES2026\RAW-SDIO\SDIO_RAW_filesystem\0318
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 4 4 2026-03-18 18:01:44.861
+!MESSAGE CubeMX plugin appears to be active, Log4j initialization might be too late.
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2026-03-18 18:01:44.863
+!MESSAGE Log4j2 initialized with config file C:\Users\YOOCHAN\Desktop\ongoing_projects\ARES2026\RAW-SDIO\SDIO_RAW_filesystem\0318\.metadata\.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2026-03-18 18:01:48.065
+!MESSAGE Started RMI Server, listening on port 41337
+!SESSION 2026-03-18 18:02:21.888 -----------------------------------------------
+eclipse.buildId=Version 1.19.0
+java.version=21.0.3
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=win32, ARCH=x86_64, WS=win32, NL=ko_KR
+Framework arguments:  C:\Users\YOOCHAN\Desktop\ongoing_projects\ARES2026\RAW-SDIO\SDIO_RAW_filesystem\0318\.project
+Command-line arguments:  -os win32 -ws win32 -arch x86_64 C:\Users\YOOCHAN\Desktop\ongoing_projects\ARES2026\RAW-SDIO\SDIO_RAW_filesystem\0318\.project
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 4 4 2026-03-18 18:02:27.250
+!MESSAGE CubeMX plugin appears to be active, Log4j initialization might be too late.
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2026-03-18 18:02:27.251
+!MESSAGE Log4j2 initialized with config file C:\Users\YOOCHAN\Desktop\ongoing_projects\ARES2026\RAW-SDIO\SDIO_RAW_filesystem\0318\.metadata\.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2026-03-18 18:02:30.890
+!MESSAGE Started RMI Server, listening on port 41337
+
+!ENTRY org.eclipse.cdt.core 1 0 2026-03-18 18:06:28.641
+!MESSAGE Indexed '0318' (23 sources, 84 headers) in 2.82 sec: 5,599 declarations; 31,411 references; 0 unresolved inclusions; 1 syntax errors; 2 unresolved names (0.0054%)
