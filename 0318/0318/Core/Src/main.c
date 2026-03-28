@@ -98,7 +98,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_SDIO_SD_Init();
   /* USER CODE BEGIN 2 */
-  hsd.Init.BusWide = SDIO_BUS_WIDE_4B;
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
