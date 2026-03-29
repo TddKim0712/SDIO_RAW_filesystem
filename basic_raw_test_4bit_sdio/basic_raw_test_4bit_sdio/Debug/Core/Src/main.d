@@ -29,7 +29,8 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/app_sd_test_config.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h \
  ../Core/Inc/gpio.h ../Core/Inc/main.h ../Core/Inc/dma.h \
  ../Core/Inc/usart.h ../Core/Inc/sdio.h ../Core/Src/raw_diskio.h \
- ../Core/Src/raw_log_writer.h ../Core/Src/raw_log_core.h
+ ../Core/Src/raw_log_stream.h ../Core/Src/raw_log_writer.h \
+ ../Core/Src/raw_log_core.h
 ../Core/Inc/app_sd_test_config.h:
 ../Core/Inc/main.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h:
@@ -66,5 +67,6 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/app_sd_test_config.h \
 ../Core/Inc/usart.h:
 ../Core/Inc/sdio.h:
 ../Core/Src/raw_diskio.h:
+../Core/Src/raw_log_stream.h:
 ../Core/Src/raw_log_writer.h:
 ../Core/Src/raw_log_core.h:

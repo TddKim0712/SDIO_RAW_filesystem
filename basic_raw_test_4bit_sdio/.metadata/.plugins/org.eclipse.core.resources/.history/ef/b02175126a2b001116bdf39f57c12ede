@@ -1,0 +1,213 @@
+#include "raw_diskio.h"
+
+#include <stddef.h>
+#include <stdint.h>
+
+extern SD_HandleTypeDef hsd;
+
+static uint32_t g_raw_sd_last_error = 0U;
+
+static int raw_sd_is_word_aligned(const void *ptr)
+{
+    return ((((uintptr_t)ptr) & 0x3U) == 0U);
+}
+
+static raw_sd_status_t raw_sd_apply_transfer_clock(uint32_t transfer_clock_div)
+{
+    if (transfer_clock_div > 0xFFU)
+    {
+        return RAW_SD_ERR_PARAM;
+    }
+
+    if (raw_sd_wait_ready(RAW_SD_TIMEOUT_READY_MS) != RAW_SD_OK)
+    {
+        return RAW_SD_ERR_TIMEOUT;
+    }
+
+    hsd.Init.ClockDiv = transfer_clock_div;
+
+    MODIFY_REG(hsd.Instance->CLKCR,
+               SDIO_CLKCR_CLKDIV,
+               (transfer_clock_div & SDIO_CLKCR_CLKDIV));
+
+    return RAW_SD_OK;
+}
+
+static raw_sd_status_t raw_sd_apply_bus_width(raw_sd_bus_width_t bus_width)
+{
+    uint32_t hal_bus_width;
+
+    if (bus_width == RAW_SD_BUS_4BIT)
+    {
+        hal_bus_width = SDIO_BUS_WIDE_4B;
+    }
+    else
+    {
+        hal_bus_width = SDIO_BUS_WIDE_1B;
+    }
+
+    if (HAL_SD_ConfigWideBusOperation(&hsd, hal_bus_width) != HAL_OK)
+    {
+        g_raw_sd_last_error = HAL_SD_GetError(&hsd);
+        return RAW_SD_ERR_WIDEBUS;
+    }
+
+    hsd.Init.BusWide = hal_bus_width;
+    return RAW_SD_OK;
+}
+
+uint32_t raw_sd_get_last_error(void)
+{
+    return g_raw_sd_last_error;
+}
+
+HAL_SD_CardStateTypeDef raw_sd_get_card_state(void)
+{
+    return HAL_SD_GetCardState(&hsd);
+}
+
+void raw_sd_get_card_info(HAL_SD_CardInfoTypeDef *info)
+{
+    if (info != NULL)
+    {
+        HAL_SD_GetCardInfo(&hsd, info);
+    }
+}
+
+raw_sd_status_t raw_sd_wait_ready(uint32_t timeout_ms)
+{
+    uint32_t start = HAL_GetTick();
+
+    while ((HAL_GetTick() - start) < timeout_ms)
+    {
+        if (HAL_SD_GetCardState(&hsd) == HAL_SD_CARD_TRANSFER)
+        {
+            return RAW_SD_OK;
+        }
+
+        HAL_Delay(1U);
+    }
+
+    g_raw_sd_last_error = HAL_SD_GetError(&hsd);
+    return RAW_SD_ERR_TIMEOUT;
+}
+
+raw_sd_status_t raw_sd_init(raw_sd_bus_width_t bus_width,
+                            uint32_t transfer_clock_div)
+{
+    hsd.Init.ClockEdge = SDIO_CLOCK_EDGE_RISING;
+    hsd.Init.ClockBypass = SDIO_CLOCK_BYPASS_DISABLE;
+    hsd.Init.ClockPowerSave = SDIO_CLOCK_POWER_SAVE_DISABLE;
+    hsd.Init.BusWide = SDIO_BUS_WIDE_1B;
+    hsd.Init.HardwareFlowControl = SDIO_HARDWARE_FLOW_CONTROL_DISABLE;
+    hsd.Init.ClockDiv = RAW_SD_INIT_CLOCK_DIV_DEFAULT;
+
+    if (HAL_SD_Init(&hsd) != HAL_OK)
+    {
+        g_raw_sd_last_error = HAL_SD_GetError(&hsd);
+        return RAW_SD_ERR_INIT;
+    }
+
+    return raw_sd_reconfigure(bus_width, transfer_clock_div);
+}
+
+raw_sd_status_t raw_sd_reconfigure(raw_sd_bus_width_t bus_width,
+                                   uint32_t transfer_clock_div)
+{
+    raw_sd_status_t status;
+
+    status = raw_sd_wait_ready(RAW_SD_TIMEOUT_READY_MS);
+    if (status != RAW_SD_OK)
+    {
+        return status;
+    }
+
+    if (bus_width == RAW_SD_BUS_4BIT)
+    {
+        status = raw_sd_apply_bus_width(RAW_SD_BUS_4BIT);
+        if (status != RAW_SD_OK)
+        {
+            return status;
+        }
+    }
+    else
+    {
+        /*
+         * Stay in 1-bit. After HAL_SD_Init() the card is already in 1-bit mode,
+         * but explicitly update the software handle for consistency.
+         */
+        hsd.Init.BusWide = SDIO_BUS_WIDE_1B;
+    }
+
+    status = raw_sd_apply_transfer_clock(transfer_clock_div);
+    if (status != RAW_SD_OK)
+    {
+        return status;
+    }
+
+    return raw_sd_wait_ready(RAW_SD_TIMEOUT_READY_MS);
+}
+
+raw_sd_status_t raw_sd_read_blocks(uint32_t start_lba,
+                                   void *buf,
+                                   uint32_t block_count)
+{
+    uint32_t timeout_ms;
+
+    if ((buf == NULL) || (block_count == 0U))
+    {
+        return RAW_SD_ERR_PARAM;
+    }
+
+    if (!raw_sd_is_word_aligned(buf))
+    {
+        return RAW_SD_ERR_ALIGN;
+    }
+
+    timeout_ms = RAW_SD_TIMEOUT_READ_BASE_MS +
+                 (RAW_SD_TIMEOUT_PER_BLOCK_MS * block_count);
+
+    if (HAL_SD_ReadBlocks(&hsd,
+                          (uint8_t *)buf,
+                          start_lba,
+                          block_count,
+                          timeout_ms) != HAL_OK)
+    {
+        g_raw_sd_last_error = HAL_SD_GetError(&hsd);
+        return RAW_SD_ERR_READ;
+    }
+
+    return raw_sd_wait_ready(timeout_ms);
+}
+
+raw_sd_status_t raw_sd_write_blocks(uint32_t start_lba,
+                                    const void *buf,
+                                    uint32_t block_count)
+{
+    uint32_t timeout_ms;
+
+    if ((buf == NULL) || (block_count == 0U))
+    {
+        return RAW_SD_ERR_PARAM;
+    }
+
+    if (!raw_sd_is_word_aligned(buf))
+    {
+        return RAW_SD_ERR_ALIGN;
+    }
+
+    timeout_ms = RAW_SD_TIMEOUT_WRITE_BASE_MS +
+                 (RAW_SD_TIMEOUT_PER_BLOCK_MS * block_count);
+
+    if (HAL_SD_WriteBlocks(&hsd,
+                           (uint8_t *)buf,
+                           start_lba,
+                           block_count,
+                           timeout_ms) != HAL_OK)
+    {
+        g_raw_sd_last_error = HAL_SD_GetError(&hsd);
+        return RAW_SD_ERR_WRITE;
+    }
+
+    return raw_sd_wait_ready(timeout_ms);
+}

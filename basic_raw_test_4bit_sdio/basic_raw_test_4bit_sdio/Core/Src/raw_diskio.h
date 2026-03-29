@@ -29,6 +29,7 @@ extern "C" {
 typedef enum
 {
     RAW_SD_OK = 0,
+    RAW_SD_IN_PROGRESS = 1,
     RAW_SD_ERR_PARAM = -1,
     RAW_SD_ERR_ALIGN = -2,
     RAW_SD_ERR_INIT = -3,
@@ -45,9 +46,21 @@ typedef enum
     RAW_SD_BUS_4BIT = 1
 } raw_sd_bus_width_t;
 
+typedef struct
+{
+    uint32_t read_retry_count;
+    uint32_t write_retry_count;
+    uint32_t recover_count;
+    uint32_t async_restart_count;
+    raw_sd_status_t last_status;
+    uint32_t last_hal_error;
+} raw_sd_retry_stats_t;
+
 uint32_t raw_sd_get_last_error(void);
 HAL_SD_CardStateTypeDef raw_sd_get_card_state(void);
 void raw_sd_get_card_info(HAL_SD_CardInfoTypeDef *info);
+void raw_sd_get_retry_stats(raw_sd_retry_stats_t *stats);
+void raw_sd_reset_retry_stats(void);
 
 raw_sd_status_t raw_sd_wait_ready(uint32_t timeout_ms);
 
@@ -72,6 +85,18 @@ raw_sd_status_t raw_sd_read_blocks(uint32_t start_lba,
 raw_sd_status_t raw_sd_write_blocks(uint32_t start_lba,
                                     const void *buf,
                                     uint32_t block_count);
+
+/*
+ * Non-blocking SDIO DMA write path.
+ * Start once, then keep calling service() until it returns RAW_SD_OK or an error.
+ */
+raw_sd_status_t raw_sd_write_blocks_async_start(uint32_t start_lba,
+                                                const void *buf,
+                                                uint32_t block_count);
+
+raw_sd_status_t raw_sd_write_blocks_async_service(void);
+
+int raw_sd_write_blocks_async_busy(void);
 
 #ifdef __cplusplus
 }

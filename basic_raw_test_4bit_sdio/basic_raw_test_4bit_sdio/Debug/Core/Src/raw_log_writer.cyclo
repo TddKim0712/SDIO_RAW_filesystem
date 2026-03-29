@@ -1,5 +1,10 @@
 ../Core/Src/raw_log_writer.c:5:12:raw_log_writer_find_latest_superblock	9
-../Core/Src/raw_log_writer.c:44:6:raw_log_writer_init_defaults	2
-../Core/Src/raw_log_writer.c:56:25:raw_log_writer_begin	6
-../Core/Src/raw_log_writer.c:103:25:raw_log_writer_write_payload	12
-../Core/Src/raw_log_writer.c:221:6:raw_log_writer_fill_test_payload	3
+../Core/Src/raw_log_writer.c:44:13:raw_log_writer_fill_step_info	5
+../Core/Src/raw_log_writer.c:77:32:raw_log_writer_complete_write	2
+../Core/Src/raw_log_writer.c:109:6:raw_log_writer_init_defaults	2
+../Core/Src/raw_log_writer.c:122:25:raw_log_writer_begin	6
+../Core/Src/raw_log_writer.c:172:25:raw_log_writer_write_payload	8
+../Core/Src/raw_log_writer.c:257:5:raw_log_writer_async_busy	2
+../Core/Src/raw_log_writer.c:267:25:raw_log_writer_start_payload_async	9
+../Core/Src/raw_log_writer.c:332:25:raw_log_writer_service_async	10
+../Core/Src/raw_log_writer.c:421:6:raw_log_writer_fill_test_payload	3

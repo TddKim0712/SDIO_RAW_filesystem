@@ -11,12 +11,14 @@ extern "C" {
 typedef enum
 {
     RAW_LOG_WRITER_OK = 0,
+    RAW_LOG_WRITER_IN_PROGRESS = 1,
     RAW_LOG_WRITER_ERR_PARAM = -1,
     RAW_LOG_WRITER_ERR_LAYOUT = -2,
     RAW_LOG_WRITER_ERR_SD_READ = -3,
     RAW_LOG_WRITER_ERR_SD_WRITE = -4,
     RAW_LOG_WRITER_ERR_SD_INFO = -5,
-    RAW_LOG_WRITER_ERR_RECOVERY = -6
+    RAW_LOG_WRITER_ERR_RECOVERY = -6,
+    RAW_LOG_WRITER_ERR_STATE = -7
 } raw_log_writer_result_t;
 
 typedef struct
@@ -33,6 +35,27 @@ typedef struct
     uint8_t  stall;
 } raw_log_writer_step_info_t;
 
+typedef enum
+{
+    RAW_LOG_WRITER_ASYNC_IDLE = 0,
+    RAW_LOG_WRITER_ASYNC_DATA_BUSY = 1,
+    RAW_LOG_WRITER_ASYNC_SUPERBLOCK_BUSY = 2
+} raw_log_writer_async_state_t;
+
+typedef struct
+{
+    raw_log_writer_async_state_t state;
+    raw_log_state_t checkpoint_state;
+    uint32_t data_lba;
+    uint32_t superblock_lba;
+    uint32_t tick_ms;
+    uint32_t data_start_ms;
+    uint32_t data_ms;
+    uint32_t superblock_start_ms;
+    uint32_t superblock_ms;
+    uint8_t  superblock_needed;
+} raw_log_writer_async_ctx_t;
+
 typedef struct
 {
     raw_log_config_t cfg;
@@ -43,6 +66,7 @@ typedef struct
     uint32_t rx_block[RAW_SD_BLOCK_SIZE / sizeof(uint32_t)];
 
     uint32_t log_every_n_blocks;
+    raw_log_writer_async_ctx_t async;
 } raw_log_writer_t;
 
 void raw_log_writer_init_defaults(raw_log_writer_t *writer);
@@ -52,6 +76,15 @@ raw_log_writer_result_t raw_log_writer_begin(raw_log_writer_t *writer);
 raw_log_writer_result_t raw_log_writer_write_payload(raw_log_writer_t *writer,
                                                      const void *payload,
                                                      uint32_t payload_bytes,
+                                                     raw_log_writer_step_info_t *step_info);
+
+int raw_log_writer_async_busy(const raw_log_writer_t *writer);
+
+raw_log_writer_result_t raw_log_writer_start_payload_async(raw_log_writer_t *writer,
+                                                           const void *payload,
+                                                           uint32_t payload_bytes);
+
+raw_log_writer_result_t raw_log_writer_service_async(raw_log_writer_t *writer,
                                                      raw_log_writer_step_info_t *step_info);
 
 void raw_log_writer_fill_test_payload(void *payload,

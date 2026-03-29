@@ -1,10 +1,10 @@
-20:54:51 **** Incremental Build of configuration Debug for project basic_raw_test_4bit_sdio ****
+23:47:05 **** Incremental Build of configuration Debug for project basic_raw_test_4bit_sdio ****
 make -j16 all 
 arm-none-eabi-size  basic_raw_test_4bit_sdio.elf 
    text	   data	    bss	    dec	    hex	filename
-  29748	    104	   3880	  33732	   83c4	basic_raw_test_4bit_sdio.elf
+  34928	    108	   5460	  40496	   9e30	basic_raw_test_4bit_sdio.elf
 Finished building: default.size.stdout
  
 
-20:54:52 Build Finished. 0 errors, 0 warnings. (took 316ms)
+23:47:05 Build Finished. 0 errors, 0 warnings. (took 271ms)
 

@@ -11,6 +11,7 @@ C_SRCS += \
 ../Core/Src/raw_crc32.c \
 ../Core/Src/raw_diskio.c \
 ../Core/Src/raw_log_core.c \
+../Core/Src/raw_log_stream.c \
 ../Core/Src/raw_log_writer.c \
 ../Core/Src/sdio.c \
 ../Core/Src/stm32f4xx_hal_msp.c \
@@ -27,6 +28,7 @@ OBJS += \
 ./Core/Src/raw_crc32.o \
 ./Core/Src/raw_diskio.o \
 ./Core/Src/raw_log_core.o \
+./Core/Src/raw_log_stream.o \
 ./Core/Src/raw_log_writer.o \
 ./Core/Src/sdio.o \
 ./Core/Src/stm32f4xx_hal_msp.o \
@@ -43,6 +45,7 @@ C_DEPS += \
 ./Core/Src/raw_crc32.d \
 ./Core/Src/raw_diskio.d \
 ./Core/Src/raw_log_core.d \
+./Core/Src/raw_log_stream.d \
 ./Core/Src/raw_log_writer.d \
 ./Core/Src/sdio.d \
 ./Core/Src/stm32f4xx_hal_msp.d \
@@ -60,7 +63,7 @@ Core/Src/%.o Core/Src/%.su Core/Src/%.cyclo: ../Core/Src/%.c Core/Src/subdir.mk
 clean: clean-Core-2f-Src
 
 clean-Core-2f-Src:
-	-$(RM) ./Core/Src/dma.cyclo ./Core/Src/dma.d ./Core/Src/dma.o ./Core/Src/dma.su ./Core/Src/gpio.cyclo ./Core/Src/gpio.d ./Core/Src/gpio.o ./Core/Src/gpio.su ./Core/Src/main.cyclo ./Core/Src/main.d ./Core/Src/main.o ./Core/Src/main.su ./Core/Src/raw_crc32.cyclo ./Core/Src/raw_crc32.d ./Core/Src/raw_crc32.o ./Core/Src/raw_crc32.su ./Core/Src/raw_diskio.cyclo ./Core/Src/raw_diskio.d ./Core/Src/raw_diskio.o ./Core/Src/raw_diskio.su ./Core/Src/raw_log_core.cyclo ./Core/Src/raw_log_core.d ./Core/Src/raw_log_core.o ./Core/Src/raw_log_core.su ./Core/Src/raw_log_writer.cyclo ./Core/Src/raw_log_writer.d ./Core/Src/raw_log_writer.o ./Core/Src/raw_log_writer.su ./Core/Src/sdio.cyclo ./Core/Src/sdio.d ./Core/Src/sdio.o ./Core/Src/sdio.su ./Core/Src/stm32f4xx_hal_msp.cyclo ./Core/Src/stm32f4xx_hal_msp.d ./Core/Src/stm32f4xx_hal_msp.o ./Core/Src/stm32f4xx_hal_msp.su ./Core/Src/stm32f4xx_it.cyclo ./Core/Src/stm32f4xx_it.d ./Core/Src/stm32f4xx_it.o ./Core/Src/stm32f4xx_it.su ./Core/Src/syscalls.cyclo ./Core/Src/syscalls.d ./Core/Src/syscalls.o ./Core/Src/syscalls.su ./Core/Src/sysmem.cyclo ./Core/Src/sysmem.d ./Core/Src/sysmem.o ./Core/Src/sysmem.su ./Core/Src/system_stm32f4xx.cyclo ./Core/Src/system_stm32f4xx.d ./Core/Src/system_stm32f4xx.o ./Core/Src/system_stm32f4xx.su ./Core/Src/usart.cyclo ./Core/Src/usart.d ./Core/Src/usart.o ./Core/Src/usart.su
+	-$(RM) ./Core/Src/dma.cyclo ./Core/Src/dma.d ./Core/Src/dma.o ./Core/Src/dma.su ./Core/Src/gpio.cyclo ./Core/Src/gpio.d ./Core/Src/gpio.o ./Core/Src/gpio.su ./Core/Src/main.cyclo ./Core/Src/main.d ./Core/Src/main.o ./Core/Src/main.su ./Core/Src/raw_crc32.cyclo ./Core/Src/raw_crc32.d ./Core/Src/raw_crc32.o ./Core/Src/raw_crc32.su ./Core/Src/raw_diskio.cyclo ./Core/Src/raw_diskio.d ./Core/Src/raw_diskio.o ./Core/Src/raw_diskio.su ./Core/Src/raw_log_core.cyclo ./Core/Src/raw_log_core.d ./Core/Src/raw_log_core.o ./Core/Src/raw_log_core.su ./Core/Src/raw_log_stream.cyclo ./Core/Src/raw_log_stream.d ./Core/Src/raw_log_stream.o ./Core/Src/raw_log_stream.su ./Core/Src/raw_log_writer.cyclo ./Core/Src/raw_log_writer.d ./Core/Src/raw_log_writer.o ./Core/Src/raw_log_writer.su ./Core/Src/sdio.cyclo ./Core/Src/sdio.d ./Core/Src/sdio.o ./Core/Src/sdio.su ./Core/Src/stm32f4xx_hal_msp.cyclo ./Core/Src/stm32f4xx_hal_msp.d ./Core/Src/stm32f4xx_hal_msp.o ./Core/Src/stm32f4xx_hal_msp.su ./Core/Src/stm32f4xx_it.cyclo ./Core/Src/stm32f4xx_it.d ./Core/Src/stm32f4xx_it.o ./Core/Src/stm32f4xx_it.su ./Core/Src/syscalls.cyclo ./Core/Src/syscalls.d ./Core/Src/syscalls.o ./Core/Src/syscalls.su ./Core/Src/sysmem.cyclo ./Core/Src/sysmem.d ./Core/Src/sysmem.o ./Core/Src/sysmem.su ./Core/Src/system_stm32f4xx.cyclo ./Core/Src/system_stm32f4xx.d ./Core/Src/system_stm32f4xx.o ./Core/Src/system_stm32f4xx.su ./Core/Src/usart.cyclo ./Core/Src/usart.d ./Core/Src/usart.o ./Core/Src/usart.su
 
 .PHONY: clean-Core-2f-Src
 
