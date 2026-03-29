@@ -63,29 +63,27 @@ static void raw_log_stream_fill_dummy_packet(raw_log_stream_t *stream,
 {
     uint32_t i;
     uint32_t now;
-    raw_log_dummy_packet_t *packet;
+    uint32_t *w;
 
-    if ((stream == NULL) || (dst == NULL) || (bytes < sizeof(raw_log_dummy_packet_t)))
+    if ((stream == NULL) || (dst == NULL) || (bytes == 0U))
     {
         return;
     }
 
     now = HAL_GetTick();
-    packet = (raw_log_dummy_packet_t *)dst;
+    w = (uint32_t *)dst;
 
-    memset(packet, 0, sizeof(*packet));
-    packet->magic = RAW_LOG_DUMMY_PACKET_MAGIC;
-    packet->packet_seq = stream->produced_packet_count;
-    packet->tick_ms = now;
-    packet->writer_seq_snapshot = stream->writer.state.write_seq;
-    packet->ready_slots_snapshot = stream->ready_slot_count;
-    packet->dropped_packets_snapshot = stream->dropped_packet_count;
-    packet->committed_blocks_snapshot = stream->committed_block_count;
-    packet->reserved0 = stream->dummy_seed;
-
-    for (i = 0U; i < sizeof(packet->tail); i++)
+    if (bytes >= 16U)
     {
-        packet->tail[i] = (uint8_t)((stream->dummy_seed + now + i) & 0xFFU);
+        w[0] = 0x44554D59UL; /* DUMY */
+        w[1] = stream->produced_packet_count;
+        w[2] = now;
+        w[3] = stream->writer.state.write_seq;
+    }
+
+    for (i = 16U; i < bytes; i++)
+    {
+        dst[i] = (uint8_t)((stream->dummy_seed + now + i) & 0xFFU);
     }
 
     stream->dummy_seed += 0x31U;
@@ -132,8 +130,6 @@ void raw_log_stream_init_defaults(raw_log_stream_t *stream)
 
     memset(stream, 0, sizeof(*stream));
     raw_log_writer_init_defaults(&stream->writer);
-    raw_log_writer_set_payload_flags(&stream->writer,
-                                     RAW_LOG_FLAG_PAYLOAD_DUMMY_SENSOR);
 
     for (i = 0U; i < RAW_LOG_STREAM_SLOT_COUNT; i++)
     {
@@ -156,8 +152,6 @@ raw_log_writer_result_t raw_log_stream_begin(raw_log_stream_t *stream)
     }
 
     raw_sd_reset_retry_stats();
-    raw_log_writer_set_payload_flags(&stream->writer,
-                                     RAW_LOG_FLAG_PAYLOAD_DUMMY_SENSOR);
 
     for (i = 0U; i < RAW_LOG_STREAM_SLOT_COUNT; i++)
     {

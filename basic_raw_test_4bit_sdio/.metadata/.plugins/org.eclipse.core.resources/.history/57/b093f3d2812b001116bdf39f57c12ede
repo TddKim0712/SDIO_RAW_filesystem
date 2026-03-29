@@ -58,11 +58,10 @@ static void App_PrintBanner(void)
            (unsigned long)g_raw_stream.writer.cfg.stall_threshold_ms,
            (unsigned int)APP_RAW_LOG_STREAM_SLOT_COUNT,
            (unsigned long)g_raw_stream.dummy_period_ms);
-    printf("[CFG] retry read=%u write=%u recover_delay_ms=%u payload_flags=0x%08lX\r\n",
+    printf("[CFG] retry read=%u write=%u recover_delay_ms=%u\r\n",
            (unsigned int)APP_RAW_SD_READ_RETRY_COUNT,
            (unsigned int)APP_RAW_SD_WRITE_RETRY_COUNT,
-           (unsigned int)APP_RAW_SD_RECOVERY_DELAY_MS,
-           (unsigned long)g_raw_stream.writer.payload_flags);
+           (unsigned int)APP_RAW_SD_RECOVERY_DELAY_MS);
 #endif
 }
 

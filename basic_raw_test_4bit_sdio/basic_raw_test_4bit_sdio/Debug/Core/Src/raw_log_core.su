@@ -11,4 +11,4 @@
 ../Core/Src/raw_log_core.c:182:6:raw_log_build_superblock_v3	24	static
 ../Core/Src/raw_log_core.c:220:18:raw_log_validate_superblock_v3	32	static
 ../Core/Src/raw_log_core.c:282:6:raw_log_build_data_block_v3	24	static
-../Core/Src/raw_log_core.c:326:18:raw_log_validate_data_block_v3	24	static
+../Core/Src/raw_log_core.c:327:18:raw_log_validate_data_block_v3	24	static

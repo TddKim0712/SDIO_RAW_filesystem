@@ -66,13 +66,10 @@ typedef struct
     uint32_t rx_block[RAW_SD_BLOCK_SIZE / sizeof(uint32_t)];
 
     uint32_t log_every_n_blocks;
-    uint32_t payload_flags;
     raw_log_writer_async_ctx_t async;
 } raw_log_writer_t;
 
 void raw_log_writer_init_defaults(raw_log_writer_t *writer);
-void raw_log_writer_set_payload_flags(raw_log_writer_t *writer,
-                                      uint32_t payload_flags);
 
 raw_log_writer_result_t raw_log_writer_begin(raw_log_writer_t *writer);
 

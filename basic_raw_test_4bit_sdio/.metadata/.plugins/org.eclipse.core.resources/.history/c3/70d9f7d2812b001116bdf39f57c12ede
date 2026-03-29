@@ -116,19 +116,7 @@ void raw_log_writer_init_defaults(raw_log_writer_t *writer)
     memset(writer, 0, sizeof(*writer));
     raw_log_default_config(&writer->cfg);
     writer->log_every_n_blocks = 64U;
-    writer->payload_flags = RAW_LOG_FLAG_PAYLOAD_LINEAR_TEST;
     writer->async.state = RAW_LOG_WRITER_ASYNC_IDLE;
-}
-
-void raw_log_writer_set_payload_flags(raw_log_writer_t *writer,
-                                      uint32_t payload_flags)
-{
-    if (writer == NULL)
-    {
-        return;
-    }
-
-    writer->payload_flags = payload_flags;
 }
 
 raw_log_writer_result_t raw_log_writer_begin(raw_log_writer_t *writer)
@@ -221,8 +209,7 @@ raw_log_writer_result_t raw_log_writer_write_payload(raw_log_writer_t *writer,
                                 data_lba,
                                 tick_ms,
                                 payload,
-                                payload_bytes,
-                                writer->payload_flags);
+                                payload_bytes);
 
     data_start_ms = HAL_GetTick();
     if (raw_sd_write_blocks(data_lba, writer->tx_block, 1U) != RAW_SD_OK)
@@ -310,8 +297,7 @@ raw_log_writer_result_t raw_log_writer_start_payload_async(raw_log_writer_t *wri
                                 data_lba,
                                 tick_ms,
                                 payload,
-                                payload_bytes,
-                                writer->payload_flags);
+                                payload_bytes);
 
     memset(&writer->async, 0, sizeof(writer->async));
     writer->async.state = RAW_LOG_WRITER_ASYNC_DATA_BUSY;

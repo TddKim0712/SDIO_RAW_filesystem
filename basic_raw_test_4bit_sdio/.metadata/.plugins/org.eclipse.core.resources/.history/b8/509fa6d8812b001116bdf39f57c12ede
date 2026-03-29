@@ -41,12 +41,6 @@
 #define APP_ENABLE_UART_LOG             1U
 #endif
 
-/*
- * Legacy synchronous writer test payload switch.
- * The staged stream path now uses dummy sensor packets and sets block flags
- * accordingly, so this macro only matters if you call raw_log_writer_fill_test_payload()
- * directly in a custom test path.
- */
 #ifndef APP_ENABLE_TEST_PATTERN_PAYLOAD
 #define APP_ENABLE_TEST_PATTERN_PAYLOAD 1U
 #endif

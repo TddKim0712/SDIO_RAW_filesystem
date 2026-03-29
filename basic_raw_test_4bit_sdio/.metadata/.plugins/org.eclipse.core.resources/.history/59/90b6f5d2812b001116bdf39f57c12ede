@@ -284,8 +284,7 @@ void raw_log_build_data_block_v3(raw_log_data_block_v3_t *db,
                                  uint32_t lba,
                                  uint32_t tick_ms,
                                  const void *payload,
-                                 uint32_t payload_bytes,
-                                 uint32_t flags)
+                                 uint32_t payload_bytes)
 {
     if ((db == NULL) || (state == NULL))
     {
@@ -320,7 +319,7 @@ void raw_log_build_data_block_v3(raw_log_data_block_v3_t *db,
     db->payload_bytes = payload_bytes;
     db->packet_count = payload_bytes / RAW_LOG_SENSOR_PACKET_BYTES;
     db->payload_crc32 = raw_crc32_compute(db->payload, db->payload_bytes);
-    db->flags = flags;
+    db->flags = 0U;
     db->block_crc32 = raw_log_data_block_crc32(db);
 }
 

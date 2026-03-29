@@ -29,13 +29,6 @@ extern "C" {
 #define RAW_LOG_RECOMMENDED_BURST_BYTES           (RAW_LOG_RECOMMENDED_BURST_BLOCKS * RAW_SD_BLOCK_SIZE)
 #define RAW_LOG_RECOMMENDED_BURST_PACKETS         (RAW_LOG_PACKETS_PER_DATA_BLOCK_V3 * RAW_LOG_RECOMMENDED_BURST_BLOCKS)
 
-
-#define RAW_LOG_FLAG_PAYLOAD_LINEAR_TEST        0x00000001UL
-#define RAW_LOG_FLAG_PAYLOAD_DUMMY_SENSOR       0x00000002UL
-#define RAW_LOG_FLAG_PAYLOAD_SENSOR_DMA         0x00000004UL
-
-#define RAW_LOG_DUMMY_PACKET_MAGIC              0x44554D59UL /* "DUMY" */
-
 typedef enum
 {
     RAW_LOG_OK = 0,
@@ -113,25 +106,6 @@ typedef struct
 typedef char raw_log_superblock_v3_size_check[
     (sizeof(raw_log_superblock_v3_t) == RAW_SD_BLOCK_SIZE) ? 1 : -1];
 
-
-#pragma pack(push, 1)
-typedef struct
-{
-    uint32_t magic;
-    uint32_t packet_seq;
-    uint32_t tick_ms;
-    uint32_t writer_seq_snapshot;
-    uint32_t ready_slots_snapshot;
-    uint32_t dropped_packets_snapshot;
-    uint32_t committed_blocks_snapshot;
-    uint32_t reserved0;
-    uint8_t  tail[32];
-} raw_log_dummy_packet_t;
-#pragma pack(pop)
-
-typedef char raw_log_dummy_packet_size_check[
-    (sizeof(raw_log_dummy_packet_t) == RAW_LOG_SENSOR_PACKET_BYTES) ? 1 : -1];
-
 #pragma pack(push, 1)
 typedef struct
 {
@@ -206,8 +180,7 @@ void raw_log_build_data_block_v3(raw_log_data_block_v3_t *db,
                                  uint32_t lba,
                                  uint32_t tick_ms,
                                  const void *payload,
-                                 uint32_t payload_bytes,
-                                 uint32_t flags);
+                                 uint32_t payload_bytes);
 
 raw_log_result_t raw_log_validate_data_block_v3(const raw_log_data_block_v3_t *db);
 
