@@ -1,0 +1,3 @@
+../Core/Src/raw_crc32.c:3:10:raw_crc32_update	6
+../Core/Src/raw_crc32.c:34:10:raw_crc32_finalize	1
+../Core/Src/raw_crc32.c:39:10:raw_crc32_compute	1

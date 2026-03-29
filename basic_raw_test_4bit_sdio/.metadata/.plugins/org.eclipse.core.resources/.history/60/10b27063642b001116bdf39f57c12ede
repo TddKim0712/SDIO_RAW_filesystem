@@ -1,0 +1,60 @@
+#ifndef APP_SD_TEST_CONFIG_H
+#define APP_SD_TEST_CONFIG_H
+
+/*
+ * User test switch -----------------------------------------------------------
+ * Change only this header while debugging.
+ *
+ * APP_SD_TEST_MODE
+ *   1U : force 1-bit transfer mode
+ *   4U : force 4-bit transfer mode
+ *
+ * APP_SD_TEST_CLK_DIV_1BIT / APP_SD_TEST_CLK_DIV_4BIT
+ *   SDIO_CK = 48 MHz / (ClockDiv + 2)
+ *   0  -> 24 MHz
+ *   2  -> 12 MHz
+ *   8  ->  4.8 MHz
+ *   10 ->  4.0 MHz
+ *   46 ->  1.0 MHz
+ *
+ * Recommended first debug values:
+ *   1-bit : div 2
+ *   4-bit : div 8 or 10
+ */
+#ifndef APP_SD_TEST_MODE
+#define APP_SD_TEST_MODE                1U
+#endif
+
+#ifndef APP_SD_TEST_CLK_DIV_1BIT
+#define APP_SD_TEST_CLK_DIV_1BIT        2U
+#endif
+
+#ifndef APP_SD_TEST_CLK_DIV_4BIT
+#define APP_SD_TEST_CLK_DIV_4BIT        8U
+#endif
+
+#ifndef APP_LOG_EVERY_N_BLOCKS
+#define APP_LOG_EVERY_N_BLOCKS          64U
+#endif
+
+#ifndef APP_ENABLE_UART_LOG
+#define APP_ENABLE_UART_LOG             1U
+#endif
+
+#ifndef APP_ENABLE_TEST_PATTERN_PAYLOAD
+#define APP_ENABLE_TEST_PATTERN_PAYLOAD 1U
+#endif
+
+#if (APP_SD_TEST_MODE == 4U)
+#define APP_SD_SELECTED_BUS_WIDTH       RAW_SD_BUS_4BIT
+#define APP_SD_SELECTED_BUS_WIDTH_NAME  "4bit"
+#define APP_SD_SELECTED_CLOCK_DIV       APP_SD_TEST_CLK_DIV_4BIT
+#elif (APP_SD_TEST_MODE == 1U)
+#define APP_SD_SELECTED_BUS_WIDTH       RAW_SD_BUS_1BIT
+#define APP_SD_SELECTED_BUS_WIDTH_NAME  "1bit"
+#define APP_SD_SELECTED_CLOCK_DIV       APP_SD_TEST_CLK_DIV_1BIT
+#else
+#error "APP_SD_TEST_MODE must be 1U or 4U"
+#endif
+
+#endif /* APP_SD_TEST_CONFIG_H */

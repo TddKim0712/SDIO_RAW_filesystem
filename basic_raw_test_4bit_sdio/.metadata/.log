@@ -4253,3 +4253,62 @@ Command-line arguments:  -os win32 -ws win32 -arch x86_64
 
 !ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2026-03-29 14:14:04.026
 !MESSAGE Started RMI Server, listening on port 41337
+
+!ENTRY org.eclipse.cdt.dsf.gdb 4 5012 2026-03-29 15:26:47.986
+!MESSAGE Error in final launch sequence:
+
+Failed to execute MI command:
+load C:\\Users\\YOOCHAN\\Desktop\\ongoing_projects\\ARES2026\\RAW-SDIO\\SDIO_RAW_filesystem\\basic_raw_test_4bit_sdio\\basic_raw_test_4bit_sdio\\Debug\\basic_raw_test_4bit_sdio.elf 
+
+Error message from debugger back end:
+Cannot execute this command while the target is running.
+Use the "interrupt" command to stop the target
+and then try again.
+!STACK 1
+org.eclipse.core.runtime.CoreException: Failed to execute MI command:
+load C:\\Users\\YOOCHAN\\Desktop\\ongoing_projects\\ARES2026\\RAW-SDIO\\SDIO_RAW_filesystem\\basic_raw_test_4bit_sdio\\basic_raw_test_4bit_sdio\\Debug\\basic_raw_test_4bit_sdio.elf 
+
+Error message from debugger back end:
+Cannot execute this command while the target is running.
+Use the "interrupt" command to stop the target
+and then try again.
+	at org.eclipse.cdt.dsf.concurrent.Query.get(Query.java:112)
+	at org.eclipse.cdt.dsf.gdb.launching.GdbLaunchDelegate.launchDebugSession(GdbLaunchDelegate.java:252)
+	at org.eclipse.cdt.dsf.gdb.launching.GdbLaunchDelegate.launchDebugger(GdbLaunchDelegate.java:109)
+	at org.eclipse.cdt.dsf.gdb.launching.GdbLaunchDelegate.launch(GdbLaunchDelegate.java:97)
+	at com.st.stm32cube.ide.mcu.debug.launch.DSFDelegate.launch(DSFDelegate.java:336)
+	at org.eclipse.debug.internal.core.LaunchConfiguration.launch(LaunchConfiguration.java:805)
+	at org.eclipse.debug.internal.core.LaunchConfiguration.launch(LaunchConfiguration.java:716)
+	at org.eclipse.debug.internal.ui.DebugUIPlugin.buildAndLaunch(DebugUIPlugin.java:1054)
+	at org.eclipse.debug.internal.ui.DebugUIPlugin$1.run(DebugUIPlugin.java:1257)
+	at org.eclipse.core.internal.jobs.Worker.run(Worker.java:63)
+Contains: Failed to execute MI command:
+load C:\\Users\\YOOCHAN\\Desktop\\ongoing_projects\\ARES2026\\RAW-SDIO\\SDIO_RAW_filesystem\\basic_raw_test_4bit_sdio\\basic_raw_test_4bit_sdio\\Debug\\basic_raw_test_4bit_sdio.elf 
+
+Error message from debugger back end:
+Cannot execute this command while the target is running.
+Use the "interrupt" command to stop the target
+and then try again.
+java.lang.Exception: Cannot execute this command while the target is running.\nUse the "interrupt" command to stop the target\nand then try again.
+	at org.eclipse.cdt.dsf.mi.service.command.AbstractMIControl$RxThread.processMIOutput(AbstractMIControl.java:1024)
+	at org.eclipse.cdt.dsf.mi.service.command.AbstractMIControl$RxThread.run(AbstractMIControl.java:853)
+!SUBENTRY 1 org.eclipse.cdt.dsf 4 10004 2026-03-29 15:26:47.987
+!MESSAGE Failed to execute MI command:
+load C:\\Users\\YOOCHAN\\Desktop\\ongoing_projects\\ARES2026\\RAW-SDIO\\SDIO_RAW_filesystem\\basic_raw_test_4bit_sdio\\basic_raw_test_4bit_sdio\\Debug\\basic_raw_test_4bit_sdio.elf 
+
+Error message from debugger back end:
+Cannot execute this command while the target is running.
+Use the "interrupt" command to stop the target
+and then try again.
+!SUBENTRY 2 org.eclipse.cdt.dsf.gdb 4 10004 2026-03-29 15:26:47.987
+!MESSAGE Failed to execute MI command:
+load C:\\Users\\YOOCHAN\\Desktop\\ongoing_projects\\ARES2026\\RAW-SDIO\\SDIO_RAW_filesystem\\basic_raw_test_4bit_sdio\\basic_raw_test_4bit_sdio\\Debug\\basic_raw_test_4bit_sdio.elf 
+
+Error message from debugger back end:
+Cannot execute this command while the target is running.
+Use the "interrupt" command to stop the target
+and then try again.
+!STACK 0
+java.lang.Exception: Cannot execute this command while the target is running.\nUse the "interrupt" command to stop the target\nand then try again.
+	at org.eclipse.cdt.dsf.mi.service.command.AbstractMIControl$RxThread.processMIOutput(AbstractMIControl.java:1024)
+	at org.eclipse.cdt.dsf.mi.service.command.AbstractMIControl$RxThread.run(AbstractMIControl.java:853)

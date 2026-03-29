@@ -1,394 +1,41 @@
+#include <app_sd_test_config.h>
 #include "main.h"
 #include "gpio.h"
 #include "dma.h"
 #include "usart.h"
 #include "sdio.h"
+
 #include "raw_diskio.h"
+#include "raw_log_writer.h"
 
 #include <stdio.h>
-#include <string.h>
 
-#define RAW_LAYOUT_VERSION             2U
-#define RAW_SUPERBLOCK_RING_START_LBA  0U
-#define RAW_SUPERBLOCK_RING_COUNT      32U
-#define RAW_DATA_START_LBA             (RAW_SUPERBLOCK_RING_START_LBA + RAW_SUPERBLOCK_RING_COUNT)
-#define RAW_SUPERBLOCK_WRITE_INTERVAL   16U
-
-#define RAW_SUPER_MAGIC                "RAWSDIO2"
-#define RAW_DATA_MAGIC                 "RAWDATA1"
-#define RAW_TAIL_MAGIC                 0xA55A5AA5UL
-
-#define RAW_STALL_THRESHOLD_MS         20U
-#define RAW_LOG_EVERY_N_BLOCKS         64U
-
+/* Private variables ---------------------------------------------------------*/
 extern UART_HandleTypeDef huart2;
 
-#pragma pack(push, 1)
-typedef struct
-{
-    char     magic[8];
-    uint32_t version;
-    uint32_t block_size;
-    uint32_t card_block_count;
+static raw_log_writer_t g_raw_writer;
+static uint8_t g_dummy_payload[RAW_LOG_DATA_PAYLOAD_BYTES_V3];
 
-    uint32_t superblock_ring_start_lba;
-    uint32_t superblock_ring_count;
-    uint32_t data_start_lba;
-
-    uint32_t boot_count;
-    uint32_t write_seq;
-
-    uint32_t last_written_lba;
-    uint32_t next_data_lba;
-
-    uint32_t uptime_ms;
-    uint32_t last_data_write_ms;
-    uint32_t last_total_write_ms;
-    uint32_t max_total_write_ms;
-    uint32_t stall_count;
-
-    uint8_t  reserved[440];
-    uint32_t tail_magic;
-} raw_superblock_t;
-#pragma pack(pop)
-
-typedef char raw_superblock_size_check[(sizeof(raw_superblock_t) == 512U) ? 1 : -1];
-
-#define RAW_DATA_HEADER_SIZE   (8U + 8U * 4U)
-#define RAW_DATA_PAYLOAD_SIZE  (RAW_SD_BLOCK_SIZE - RAW_DATA_HEADER_SIZE)
-
-#pragma pack(push, 1)
-typedef struct
-{
-    char     magic[8];
-    uint32_t version;
-    uint32_t seq;
-    uint32_t lba;
-    uint32_t boot_count;
-    uint32_t tick_ms;
-    uint32_t data_ms;
-    uint32_t sb_ms;
-    uint32_t total_ms;
-    uint8_t  payload[RAW_DATA_PAYLOAD_SIZE];
-} raw_data_block_t;
-#pragma pack(pop)
-
-typedef char raw_data_block_size_check[(sizeof(raw_data_block_t) == 512U) ? 1 : -1];
-
-static HAL_SD_CardInfoTypeDef g_card_info;
-static uint32_t g_tx_block[RAW_SD_BLOCK_SIZE / sizeof(uint32_t)];
-static uint32_t g_rx_block[RAW_SD_BLOCK_SIZE / sizeof(uint32_t)];
-
-static uint32_t g_boot_count = 1U;
-static uint32_t g_write_seq = 0U;
-static uint32_t g_next_data_lba = RAW_DATA_START_LBA;
-static uint32_t g_last_written_lba = 0U;
-static uint32_t g_superblock_ring_index = 0U;
-
-static uint32_t g_last_total_write_ms = 0U;
-static uint32_t g_max_total_write_ms = 0U;
-static uint32_t g_stall_count = 0U;
-
+/* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 
-static void fatal(const char *tag)
-{
-    printf("[FATAL] %s hal=0x%08lX sta=0x%08lX card=%lu\r\n",
-           tag,
-           (unsigned long)raw_sd_get_last_error(),
-           (unsigned long)hsd.Instance->STA,
-           (unsigned long)HAL_SD_GetCardState(&hsd));
-    Error_Handler();
-}
+static void App_Init(void);
+static void App_PrintBanner(void);
+static void App_PrintCardInfo(void);
+static void App_PrintStartState(void);
+static void App_RunRawWriterLoop(void);
+static void App_PreparePayload(uint8_t *payload, uint32_t payload_bytes);
+static void App_HandleWriteStep(const raw_log_writer_step_info_t *step);
+static void App_Fatal(const char *tag);
 
+/* Private user code ---------------------------------------------------------*/
 int __io_putchar(int ch)
 {
     HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1U, HAL_MAX_DELAY);
     return ch;
 }
 
-static uint32_t wrap_data_lba(uint32_t lba)
-{
-    if (lba < RAW_DATA_START_LBA)
-    {
-        return RAW_DATA_START_LBA;
-    }
-
-    if (lba >= g_card_info.LogBlockNbr)
-    {
-        return RAW_DATA_START_LBA;
-    }
-
-    return lba;
-}
-
-static int superblock_valid(const raw_superblock_t *sb)
-{
-    if (memcmp(sb->magic, RAW_SUPER_MAGIC, 8U) != 0)
-    {
-        return 0;
-    }
-    if (sb->version != RAW_LAYOUT_VERSION)
-    {
-        return 0;
-    }
-    if (sb->block_size != RAW_SD_BLOCK_SIZE)
-    {
-        return 0;
-    }
-    if (sb->tail_magic != RAW_TAIL_MAGIC)
-    {
-        return 0;
-    }
-    if (sb->superblock_ring_start_lba != RAW_SUPERBLOCK_RING_START_LBA)
-    {
-        return 0;
-    }
-    if (sb->superblock_ring_count != RAW_SUPERBLOCK_RING_COUNT)
-    {
-        return 0;
-    }
-    if (sb->data_start_lba != RAW_DATA_START_LBA)
-    {
-        return 0;
-    }
-    if (sb->card_block_count != g_card_info.LogBlockNbr)
-    {
-        return 0;
-    }
-    if (sb->next_data_lba >= sb->card_block_count)
-    {
-        return 0;
-    }
-    return 1;
-}
-
-static int recover_latest_superblock(raw_superblock_t *latest, uint32_t *latest_lba)
-{
-    uint32_t lba;
-    int found = 0;
-
-    for (lba = RAW_SUPERBLOCK_RING_START_LBA;
-         lba < (RAW_SUPERBLOCK_RING_START_LBA + RAW_SUPERBLOCK_RING_COUNT);
-         lba++)
-    {
-        if (raw_sd_read_blocks(lba, g_rx_block, 1U) != RAW_SD_OK)
-        {
-            fatal("recover read superblock ring");
-        }
-
-        if (superblock_valid((const raw_superblock_t *)g_rx_block))
-        {
-            if ((!found) || (((const raw_superblock_t *)g_rx_block)->write_seq > latest->write_seq))
-            {
-                memcpy(latest, g_rx_block, RAW_SD_BLOCK_SIZE);
-                *latest_lba = lba;
-                found = 1;
-            }
-        }
-    }
-
-    return found;
-}
-
-static void build_superblock(raw_superblock_t *sb,
-                             uint32_t last_written_lba,
-                             uint32_t next_data_lba,
-                             uint32_t write_seq,
-                             uint32_t uptime_ms)
-{
-    memset(sb, 0, sizeof(*sb));
-
-    memcpy(sb->magic, RAW_SUPER_MAGIC, 8U);
-    sb->version = RAW_LAYOUT_VERSION;
-    sb->block_size = RAW_SD_BLOCK_SIZE;
-    sb->card_block_count = g_card_info.LogBlockNbr;
-
-    sb->superblock_ring_start_lba = RAW_SUPERBLOCK_RING_START_LBA;
-    sb->superblock_ring_count = RAW_SUPERBLOCK_RING_COUNT;
-    sb->data_start_lba = RAW_DATA_START_LBA;
-
-    sb->boot_count = g_boot_count;
-    sb->write_seq = write_seq;
-
-    sb->last_written_lba = last_written_lba;
-    sb->next_data_lba = next_data_lba;
-
-    sb->uptime_ms = uptime_ms;
-    sb->last_data_write_ms = 0U;
-    sb->last_total_write_ms = g_last_total_write_ms;
-    sb->max_total_write_ms = g_max_total_write_ms;
-    sb->stall_count = g_stall_count;
-
-    sb->tail_magic = RAW_TAIL_MAGIC;
-}
-
-static void build_data_block(raw_data_block_t *db,
-                             uint32_t seq,
-                             uint32_t lba,
-                             uint32_t tick_ms,
-                             uint32_t data_ms,
-                             uint32_t sb_ms,
-                             uint32_t total_ms)
-{
-    uint32_t i;
-
-    memset(db, 0, sizeof(*db));
-
-    memcpy(db->magic, RAW_DATA_MAGIC, 8U);
-    db->version = RAW_LAYOUT_VERSION;
-    db->seq = seq;
-    db->lba = lba;
-    db->boot_count = g_boot_count;
-    db->tick_ms = tick_ms;
-    db->data_ms = data_ms;
-    db->sb_ms = sb_ms;
-    db->total_ms = total_ms;
-
-    for (i = 0U; i < sizeof(db->payload); i++)
-    {
-        db->payload[i] = (uint8_t)((seq + lba + i) & 0xFFU);
-    }
-}
-
-static void init_log_state(void)
-{
-    raw_superblock_t latest;
-    uint32_t latest_lba = 0U;
-
-    memset(&latest, 0, sizeof(latest));
-
-    if (recover_latest_superblock(&latest, &latest_lba))
-    {
-        g_boot_count = latest.boot_count + 1U;
-        g_write_seq = latest.write_seq + 1U;
-        g_next_data_lba = wrap_data_lba(latest.next_data_lba);
-        g_last_written_lba = latest.last_written_lba;
-        g_superblock_ring_index =
-            (latest_lba - RAW_SUPERBLOCK_RING_START_LBA + 1U) % RAW_SUPERBLOCK_RING_COUNT;
-
-        g_last_total_write_ms = latest.last_total_write_ms;
-        g_max_total_write_ms = latest.max_total_write_ms;
-        g_stall_count = latest.stall_count;
-
-        printf("[RECOVER] latest_sb_lba=%lu boot_count=%lu next_data_lba=%lu next_seq=%lu\r\n",
-               (unsigned long)latest_lba,
-               (unsigned long)g_boot_count,
-               (unsigned long)g_next_data_lba,
-               (unsigned long)g_write_seq);
-    }
-    else
-    {
-        g_boot_count = 1U;
-        g_write_seq = 0U;
-        g_next_data_lba = RAW_DATA_START_LBA;
-        g_last_written_lba = 0U;
-        g_superblock_ring_index = 0U;
-        g_last_total_write_ms = 0U;
-        g_max_total_write_ms = 0U;
-        g_stall_count = 0U;
-
-        printf("[RECOVER] no valid superblock found, start fresh\r\n");
-    }
-}
-static void write_forever(void)
-{
-    raw_superblock_t *sb = (raw_superblock_t *)g_tx_block;
-    raw_data_block_t *db = (raw_data_block_t *)g_tx_block;
-    uint32_t data_lba = g_next_data_lba;
-
-    while (1)
-    {
-        uint32_t data_start_ms;
-        uint32_t data_end_ms;
-        uint32_t sb_start_ms = 0U;
-        uint32_t sb_end_ms = 0U;
-        uint32_t tick_ms;
-        uint32_t superblock_lba = 0U;
-        uint32_t data_ms;
-        uint32_t sb_ms = 0U;
-        uint32_t total_ms;
-        uint32_t do_superblock_write;
-
-        tick_ms = HAL_GetTick();
-
-        data_start_ms = HAL_GetTick();
-        build_data_block(db, g_write_seq, data_lba, tick_ms, 0U, 0U, 0U);
-        if (raw_sd_write_blocks(data_lba, g_tx_block, 1U) != RAW_SD_OK)
-        {
-            fatal("write data block");
-        }
-        data_end_ms = HAL_GetTick();
-
-        data_ms = data_end_ms - data_start_ms;
-        g_last_written_lba = data_lba;
-
-        data_lba++;
-        data_lba = wrap_data_lba(data_lba);
-        g_next_data_lba = data_lba;
-
-        do_superblock_write = (((g_write_seq + 1U) % RAW_SUPERBLOCK_WRITE_INTERVAL) == 0U);
-
-        if (do_superblock_write)
-        {
-            superblock_lba = RAW_SUPERBLOCK_RING_START_LBA + g_superblock_ring_index;
-
-            sb_start_ms = HAL_GetTick();
-            build_superblock(sb, g_last_written_lba, g_next_data_lba, g_write_seq, tick_ms);
-            sb->last_data_write_ms = data_ms;
-            if (raw_sd_write_blocks(superblock_lba, g_tx_block, 1U) != RAW_SD_OK)
-            {
-                fatal("write superblock ring");
-            }
-            sb_end_ms = HAL_GetTick();
-
-            sb_ms = sb_end_ms - sb_start_ms;
-
-            g_superblock_ring_index++;
-            if (g_superblock_ring_index >= RAW_SUPERBLOCK_RING_COUNT)
-            {
-                g_superblock_ring_index = 0U;
-            }
-        }
-
-        total_ms = data_ms + sb_ms;
-
-        g_last_total_write_ms = total_ms;
-        if (total_ms > g_max_total_write_ms)
-        {
-            g_max_total_write_ms = total_ms;
-        }
-        if (total_ms >= RAW_STALL_THRESHOLD_MS)
-        {
-            g_stall_count++;
-            printf("[STALL] seq=%lu data_lba=%lu sb=%lu sb_lba=%lu total_ms=%lu data_ms=%lu sb_ms=%lu stall_count=%lu\r\n",
-                   (unsigned long)g_write_seq,
-                   (unsigned long)g_last_written_lba,
-                   (unsigned long)do_superblock_write,
-                   (unsigned long)superblock_lba,
-                   (unsigned long)total_ms,
-                   (unsigned long)data_ms,
-                   (unsigned long)sb_ms,
-                   (unsigned long)g_stall_count);
-        }
-
-        if ((g_write_seq % RAW_LOG_EVERY_N_BLOCKS) == 0U)
-        {
-            printf("[LOG] seq=%lu data_lba=%lu next_lba=%lu sb=%lu sb_lba=%lu total_ms=%lu max_ms=%lu stalls=%lu\r\n",
-                   (unsigned long)g_write_seq,
-                   (unsigned long)g_last_written_lba,
-                   (unsigned long)g_next_data_lba,
-                   (unsigned long)do_superblock_write,
-                   (unsigned long)superblock_lba,
-                   (unsigned long)total_ms,
-                   (unsigned long)g_max_total_write_ms,
-                   (unsigned long)g_stall_count);
-        }
-
-        g_write_seq++;
-    }
-}
-int main(void)
+static void App_Init(void)
 {
     HAL_Init();
     SystemClock_Config();
@@ -397,34 +44,173 @@ int main(void)
     MX_DMA_Init();
     MX_USART2_UART_Init();
     MX_SDIO_SD_Init();
+}
 
-    printf("\r\n[BOOT] RAW continuous writer\r\n");
+static void App_PrintBanner(void)
+{
+#if (APP_ENABLE_UART_LOG != 0U)
+    printf("\r\n[BOOT] RAW V3 continuous writer\r\n");
+    printf("[CFG] test_mode=%s clk_div=%lu payload=%lu packets_per_block=%lu\r\n",
+           APP_SD_SELECTED_BUS_WIDTH_NAME,
+           (unsigned long)APP_SD_SELECTED_CLOCK_DIV,
+           (unsigned long)RAW_LOG_DATA_PAYLOAD_BYTES_V3,
+           (unsigned long)RAW_LOG_PACKETS_PER_DATA_BLOCK_V3);
+    printf("[CFG] superblock_interval=%lu stall_threshold_ms=%lu\r\n",
+           (unsigned long)g_raw_writer.cfg.superblock_write_interval,
+           (unsigned long)g_raw_writer.cfg.stall_threshold_ms);
+#endif
+}
 
-    if (raw_sd_init() != RAW_SD_OK)
+static void App_PrintCardInfo(void)
+{
+#if (APP_ENABLE_UART_LOG != 0U)
+    printf("[CARD] block_count=%lu block_size=%lu type=%lu data_start=%lu ring_start=%lu ring_count=%lu\r\n",
+           (unsigned long)g_raw_writer.card_info.LogBlockNbr,
+           (unsigned long)g_raw_writer.card_info.LogBlockSize,
+           (unsigned long)g_raw_writer.card_info.CardType,
+           (unsigned long)g_raw_writer.cfg.data_start_lba,
+           (unsigned long)g_raw_writer.cfg.superblock_ring_start_lba,
+           (unsigned long)g_raw_writer.cfg.superblock_ring_count);
+#endif
+}
+
+static void App_PrintStartState(void)
+{
+#if (APP_ENABLE_UART_LOG != 0U)
+    printf("[START] boot_count=%lu next_data_lba=%lu next_seq=%lu last_lba=%lu\r\n",
+           (unsigned long)g_raw_writer.state.boot_count,
+           (unsigned long)g_raw_writer.state.next_data_lba,
+           (unsigned long)g_raw_writer.state.write_seq,
+           (unsigned long)g_raw_writer.state.last_written_lba);
+#endif
+}
+
+static void App_PreparePayload(uint8_t *payload, uint32_t payload_bytes)
+{
+    if (payload == NULL)
     {
-        fatal("raw_sd_init");
+        return;
     }
 
-    raw_sd_get_card_info(&g_card_info);
-    printf("[CARD] block_count=%lu block_size=%lu type=%lu data_start=%lu ring_count=%lu\r\n",
-           (unsigned long)g_card_info.LogBlockNbr,
-           (unsigned long)g_card_info.LogBlockSize,
-           (unsigned long)g_card_info.CardType,
-           (unsigned long)RAW_DATA_START_LBA,
-           (unsigned long)RAW_SUPERBLOCK_RING_COUNT);
+#if (APP_ENABLE_TEST_PATTERN_PAYLOAD != 0U)
+    raw_log_writer_fill_test_payload(payload,
+                                     payload_bytes,
+                                     g_raw_writer.state.write_seq,
+                                     g_raw_writer.state.next_data_lba);
+#else
+    (void)payload_bytes;
+#endif
+}
 
-    if (g_card_info.LogBlockNbr <= RAW_DATA_START_LBA)
+static void App_HandleWriteStep(const raw_log_writer_step_info_t *step)
+{
+    if (step == NULL)
     {
-        fatal("card too small for raw layout");
+        return;
     }
 
-    init_log_state();
-    printf("[START] boot_count=%lu next_data_lba=%lu next_seq=%lu\r\n",
-           (unsigned long)g_boot_count,
-           (unsigned long)g_next_data_lba,
-           (unsigned long)g_write_seq);
+#if (APP_ENABLE_UART_LOG != 0U)
+    if (step->stall != 0U)
+    {
+        printf("[STALL] seq=%lu data_lba=%lu sb=%lu sb_lba=%lu total_ms=%lu data_ms=%lu sb_ms=%lu stall_count=%lu\r\n",
+               (unsigned long)step->seq,
+               (unsigned long)step->data_lba,
+               (unsigned long)step->superblock_written,
+               (unsigned long)step->superblock_lba,
+               (unsigned long)step->total_ms,
+               (unsigned long)step->data_ms,
+               (unsigned long)step->superblock_ms,
+               (unsigned long)step->stall_count);
+    }
 
-    write_forever();
+    if ((g_raw_writer.state.write_seq % g_raw_writer.log_every_n_blocks) == 0U)
+    {
+        printf("[LOG] seq=%lu data_lba=%lu next_lba=%lu sb=%lu sb_lba=%lu total_ms=%lu max_ms=%lu stalls=%lu\r\n",
+               (unsigned long)step->seq,
+               (unsigned long)step->data_lba,
+               (unsigned long)step->next_data_lba,
+               (unsigned long)step->superblock_written,
+               (unsigned long)step->superblock_lba,
+               (unsigned long)step->total_ms,
+               (unsigned long)g_raw_writer.state.max_total_write_ms,
+               (unsigned long)g_raw_writer.state.stall_count);
+    }
+#else
+    (void)step;
+#endif
+}
+
+static void App_RunRawWriterLoop(void)
+{
+    raw_log_writer_result_t writer_result;
+    raw_log_writer_step_info_t step;
+
+    for (;;)
+    {
+        App_PreparePayload(g_dummy_payload, sizeof(g_dummy_payload));
+
+        writer_result = raw_log_writer_write_payload(&g_raw_writer,
+                                                     g_dummy_payload,
+                                                     sizeof(g_dummy_payload),
+                                                     &step);
+        if (writer_result != RAW_LOG_WRITER_OK)
+        {
+            App_Fatal("raw_log_writer_write_payload");
+        }
+
+        App_HandleWriteStep(&step);
+    }
+}
+
+static void App_Fatal(const char *tag)
+{
+#if (APP_ENABLE_UART_LOG != 0U)
+    printf("[FATAL] %s hal=0x%08lX sta=0x%08lX card=%lu\r\n",
+           tag,
+           (unsigned long)raw_sd_get_last_error(),
+           (unsigned long)hsd.Instance->STA,
+           (unsigned long)HAL_SD_GetCardState(&hsd));
+#endif
+
+    Error_Handler();
+}
+
+int main(void)
+{
+    raw_log_writer_result_t writer_status;
+
+    App_Init();
+
+    raw_log_writer_init_defaults(&g_raw_writer);
+    g_raw_writer.log_every_n_blocks = APP_LOG_EVERY_N_BLOCKS;
+
+    App_PrintBanner();
+
+    /*
+     * Card identification always starts at <= 400 kHz inside raw_sd_init().
+     * The selected transfer bus width and transfer clock are then applied.
+     * Edit only app_sd_test_config.h while comparing 1-bit and 4-bit runs.
+     */
+    if (raw_sd_init(APP_SD_SELECTED_BUS_WIDTH, APP_SD_SELECTED_CLOCK_DIV) != RAW_SD_OK)
+    {
+        App_Fatal("raw_sd_init");
+    }
+
+    writer_status = raw_log_writer_begin(&g_raw_writer);
+    if (writer_status != RAW_LOG_WRITER_OK)
+    {
+        App_Fatal("raw_log_writer_begin");
+    }
+
+    App_PrintCardInfo();
+    App_PrintStartState();
+
+    if (g_raw_writer.card_info.LogBlockNbr <= g_raw_writer.cfg.data_start_lba)
+    {
+        App_Fatal("card too small for raw layout");
+    }
+
+    App_RunRawWriterLoop();
 
     while (1)
     {
@@ -448,6 +234,7 @@ void SystemClock_Config(void)
     RCC_OscInitStruct.PLL.PLLN = 336;
     RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
     RCC_OscInitStruct.PLL.PLLQ = 7;
+
     if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
     {
         Error_Handler();
