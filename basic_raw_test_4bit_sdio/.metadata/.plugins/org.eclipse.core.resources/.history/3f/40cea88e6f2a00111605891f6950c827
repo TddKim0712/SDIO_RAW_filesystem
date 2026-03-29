@@ -1,0 +1,174 @@
+#include "raw_diskio.h"
+
+#include <stdint.h>
+#include <string.h>
+
+extern SD_HandleTypeDef hsd;
+
+static uint32_t g_raw_sd_last_error = 0U;
+
+static int raw_sd_is_word_aligned(const void *ptr)
+{
+    return ((((uintptr_t)ptr) & 0x3U) == 0U);
+}
+
+uint32_t raw_sd_get_last_error(void)
+{
+    return g_raw_sd_last_error;
+}
+
+HAL_SD_CardStateTypeDef raw_sd_get_card_state(void)
+{
+    return HAL_SD_GetCardState(&hsd);
+}
+
+void raw_sd_get_card_info(HAL_SD_CardInfoTypeDef *info)
+{
+    if (info != NULL)
+    {
+        HAL_SD_GetCardInfo(&hsd, info);
+    }
+}
+
+raw_sd_status_t raw_sd_wait_ready(uint32_t timeout_ms)
+{
+    uint32_t start = HAL_GetTick();
+
+    while ((HAL_GetTick() - start) < timeout_ms)
+    {
+        if (HAL_SD_GetCardState(&hsd) == HAL_SD_CARD_TRANSFER)
+        {
+            return RAW_SD_OK;
+        }
+        HAL_Delay(1U);
+    }
+
+    g_raw_sd_last_error = HAL_SD_GetError(&hsd);
+    return RAW_SD_ERR_TIMEOUT;
+}
+
+raw_sd_status_t raw_sd_init(void)
+{
+    /*
+     * Bring-up policy:
+     *   1) init card in 1-bit @ ~400 kHz
+     *   2) switch to 4-bit
+     *   3) apply faster data clock at the same time as 4-bit switch
+     *
+     * Requirement:
+     *   MX_SDIO_SD_Init() must only fill hsd.Init fields.
+     *   It must NOT call HAL_SD_Init() and must NOT call
+     *   HAL_SD_ConfigWideBusOperation(...).
+     */
+    hsd.Init.ClockEdge = SDIO_CLOCK_EDGE_RISING;
+    hsd.Init.ClockBypass = SDIO_CLOCK_BYPASS_DISABLE;
+    hsd.Init.ClockPowerSave = SDIO_CLOCK_POWER_SAVE_DISABLE;
+    hsd.Init.BusWide = SDIO_BUS_WIDE_1B;
+    hsd.Init.HardwareFlowControl = SDIO_HARDWARE_FLOW_CONTROL_DISABLE;
+    hsd.Init.ClockDiv = RAW_SD_INIT_CLKDIV;
+
+    if (HAL_SD_Init(&hsd) != HAL_OK)
+    {
+        g_raw_sd_last_error = HAL_SD_GetError(&hsd);
+        return RAW_SD_ERR_INIT;
+    }
+
+    if (raw_sd_wait_ready(1000U) != RAW_SD_OK)
+    {
+        return RAW_SD_ERR_TIMEOUT;
+    }
+
+    hsd.Init.BusWide = SDIO_BUS_WIDE_4B;
+    hsd.Init.ClockDiv = RAW_SD_DATA_CLKDIV;
+
+    if (HAL_SD_ConfigWideBusOperation(&hsd, SDIO_BUS_WIDE_4B) != HAL_OK)
+    {
+        g_raw_sd_last_error = HAL_SD_GetError(&hsd);
+        return RAW_SD_ERR_STATE;
+    }
+
+    if (raw_sd_wait_ready(1000U) != RAW_SD_OK)
+    {
+        return RAW_SD_ERR_TIMEOUT;
+    }
+
+    return RAW_SD_OK;
+}
+
+raw_sd_status_t raw_sd_read_blocks(uint32_t start_lba, void *buf, uint32_t block_count)
+{
+    uint32_t timeout_ms;
+
+    if ((buf == NULL) || (block_count == 0U))
+    {
+        return RAW_SD_ERR_PARAM;
+    }
+
+    if (!raw_sd_is_word_aligned(buf))
+    {
+        return RAW_SD_ERR_ALIGN;
+    }
+
+    timeout_ms = 1000U + (100U * block_count);
+
+    if (HAL_SD_ReadBlocks(&hsd, (uint8_t *)buf, start_lba, block_count, timeout_ms) != HAL_OK)
+    {
+        g_raw_sd_last_error = HAL_SD_GetError(&hsd);
+        return RAW_SD_ERR_READ;
+    }
+
+    return raw_sd_wait_ready(timeout_ms);
+}
+
+raw_sd_status_t raw_sd_write_blocks(uint32_t start_lba, const void *buf, uint32_t block_count)
+{
+    uint32_t timeout_ms;
+
+    if ((buf == NULL) || (block_count == 0U))
+    {
+        return RAW_SD_ERR_PARAM;
+    }
+
+    if (!raw_sd_is_word_aligned(buf))
+    {
+        return RAW_SD_ERR_ALIGN;
+    }
+
+    timeout_ms = 2000U + (100U * block_count);
+
+    if (HAL_SD_WriteBlocks(&hsd, (uint8_t *)buf, start_lba, block_count, timeout_ms) != HAL_OK)
+    {
+        g_raw_sd_last_error = HAL_SD_GetError(&hsd);
+        return RAW_SD_ERR_WRITE;
+    }
+
+    return raw_sd_wait_ready(timeout_ms);
+}
+
+raw_sd_status_t raw_sd_fill_blocks(uint32_t start_lba, uint32_t block_count, uint8_t value)
+{
+    uint32_t i;
+    static uint32_t pattern_block[RAW_SD_BLOCK_SIZE / sizeof(uint32_t)];
+    uint32_t fill_word;
+
+    fill_word = ((uint32_t)value << 24)
+              | ((uint32_t)value << 16)
+              | ((uint32_t)value << 8)
+              | ((uint32_t)value);
+
+    for (i = 0U; i < (RAW_SD_BLOCK_SIZE / sizeof(uint32_t)); i++)
+    {
+        pattern_block[i] = fill_word;
+    }
+
+    for (i = 0U; i < block_count; i++)
+    {
+        raw_sd_status_t st = raw_sd_write_blocks(start_lba + i, pattern_block, 1U);
+        if (st != RAW_SD_OK)
+        {
+            return st;
+        }
+    }
+
+    return RAW_SD_OK;
+}

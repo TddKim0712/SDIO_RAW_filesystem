@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename resource &apos;basic_raw_test_4bit_sdio/basic_raw_test_1bit_sdio.ioc&apos; to &apos;basic_raw_test_4bit_sdio.ioc&apos;" description="Rename resource &apos;basic_raw_test_1bit_sdio.ioc&apos;" flags="7" id="org.eclipse.ltk.core.refactoring.rename.resource" input="basic_raw_test_1bit_sdio.ioc" name="basic_raw_test_4bit_sdio.ioc" stamp="1774669486209" updateReferences="true"/>
+</session>

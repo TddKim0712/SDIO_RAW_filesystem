@@ -1,0 +1,10 @@
+../Core/Src/main.c:63:13:fatal	1
+../Core/Src/main.c:71:5:__io_putchar	1
+../Core/Src/main.c:77:13:build_superblock	1
+../Core/Src/main.c:91:13:build_pattern_block	2
+../Core/Src/main.c:110:13:print_first_32	2
+../Core/Src/main.c:122:13:verify_superblock	5
+../Core/Src/main.c:142:13:verify_pattern_block	4
+../Core/Src/main.c:167:5:main	7
+../Core/Src/main.c:237:6:SystemClock_Config	3
+../Core/Src/main.c:274:6:Error_Handler	1

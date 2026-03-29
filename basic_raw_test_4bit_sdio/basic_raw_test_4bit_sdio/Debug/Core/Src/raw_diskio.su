@@ -1,0 +1,8 @@
+../Core/Src/raw_diskio.c:9:12:raw_sd_is_word_aligned	16	static
+../Core/Src/raw_diskio.c:14:10:raw_sd_get_last_error	4	static
+../Core/Src/raw_diskio.c:19:25:raw_sd_get_card_state	8	static
+../Core/Src/raw_diskio.c:24:6:raw_sd_get_card_info	16	static
+../Core/Src/raw_diskio.c:32:17:raw_sd_wait_ready	24	static
+../Core/Src/raw_diskio.c:49:17:raw_sd_init	8	static
+../Core/Src/raw_diskio.c:89:17:raw_sd_read_blocks	40	static
+../Core/Src/raw_diskio.c:114:17:raw_sd_write_blocks	40	static
