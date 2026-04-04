@@ -16,6 +16,14 @@ extern "C" {
 #define RAW_LOG_STREAM_SLOT_COUNT APP_RAW_LOG_STREAM_SLOT_COUNT
 #endif
 
+#ifndef RAW_LOG_STREAM_DMA_BURST_MAX_BLOCKS
+#if (RAW_LOG_STREAM_SLOT_COUNT < RAW_LOG_WRITER_ASYNC_MAX_BLOCKS)
+#define RAW_LOG_STREAM_DMA_BURST_MAX_BLOCKS RAW_LOG_STREAM_SLOT_COUNT
+#else
+#define RAW_LOG_STREAM_DMA_BURST_MAX_BLOCKS RAW_LOG_WRITER_ASYNC_MAX_BLOCKS
+#endif
+#endif
+
 typedef enum
 {
     RAW_LOG_STREAM_SLOT_FREE = 0,
@@ -46,7 +54,8 @@ typedef struct
 
     uint32_t fill_slot_index;
     uint32_t drain_slot_index;
-    uint32_t inflight_slot_index;
+    uint32_t inflight_slot_indices[RAW_LOG_STREAM_DMA_BURST_MAX_BLOCKS];
+    uint32_t inflight_slot_count;
     uint32_t ready_slot_count;
     uint32_t high_watermark_ready_slots;
 

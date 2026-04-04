@@ -8,6 +8,10 @@
 extern "C" {
 #endif
 
+#ifndef RAW_LOG_WRITER_ASYNC_MAX_BLOCKS
+#define RAW_LOG_WRITER_ASYNC_MAX_BLOCKS RAW_LOG_RECOMMENDED_BURST_BLOCKS
+#endif
+
 typedef enum
 {
     RAW_LOG_WRITER_OK = 0,
@@ -24,6 +28,8 @@ typedef enum
 typedef struct
 {
     uint32_t seq;
+    uint32_t last_seq;
+    uint32_t block_count;
     uint32_t data_lba;
     uint32_t next_data_lba;
     uint32_t superblock_lba;
@@ -47,6 +53,10 @@ typedef struct
     raw_log_writer_async_state_t state;
     raw_log_state_t checkpoint_state;
     uint32_t data_lba;
+    uint32_t last_data_lba;
+    uint32_t first_seq;
+    uint32_t last_seq;
+    uint32_t block_count;
     uint32_t superblock_lba;
     uint32_t tick_ms;
     uint32_t data_start_ms;
@@ -63,6 +73,8 @@ typedef struct
     HAL_SD_CardInfoTypeDef card_info;
 
     uint32_t tx_block[RAW_SD_BLOCK_SIZE / sizeof(uint32_t)];
+    uint32_t tx_burst_blocks[(RAW_LOG_WRITER_ASYNC_MAX_BLOCKS * RAW_SD_BLOCK_SIZE) /
+                             sizeof(uint32_t)];
     uint32_t rx_block[RAW_SD_BLOCK_SIZE / sizeof(uint32_t)];
 
     uint32_t log_every_n_blocks;
@@ -82,6 +94,13 @@ raw_log_writer_result_t raw_log_writer_write_payload(raw_log_writer_t *writer,
                                                      raw_log_writer_step_info_t *step_info);
 
 int raw_log_writer_async_busy(const raw_log_writer_t *writer);
+
+uint32_t raw_log_writer_get_max_contiguous_write_blocks(const raw_log_writer_t *writer);
+
+raw_log_writer_result_t raw_log_writer_start_payloads_async(raw_log_writer_t *writer,
+                                                            const void **payloads,
+                                                            const uint32_t *payload_bytes,
+                                                            uint32_t block_count);
 
 raw_log_writer_result_t raw_log_writer_start_payload_async(raw_log_writer_t *writer,
                                                            const void *payload,

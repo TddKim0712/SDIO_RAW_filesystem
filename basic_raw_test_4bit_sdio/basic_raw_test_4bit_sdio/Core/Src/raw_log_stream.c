@@ -94,31 +94,105 @@ static void raw_log_stream_fill_dummy_packet(raw_log_stream_t *stream,
 static void raw_log_stream_requeue_inflight(raw_log_stream_t *stream)
 {
     raw_log_stream_slot_t *slot;
+    uint32_t i;
+    uint32_t slot_index;
 
     if ((stream == NULL) || (stream->inflight_valid == 0U))
     {
         return;
     }
 
-    slot = &stream->slots[stream->inflight_slot_index];
-    if (slot->state == RAW_LOG_STREAM_SLOT_INFLIGHT)
+    for (i = 0U; i < stream->inflight_slot_count; i++)
     {
-        slot->state = RAW_LOG_STREAM_SLOT_READY;
-        raw_log_stream_note_ready_slot(stream);
+        slot_index = stream->inflight_slot_indices[i];
+        if (slot_index >= RAW_LOG_STREAM_SLOT_COUNT)
+        {
+            continue;
+        }
+
+        slot = &stream->slots[slot_index];
+        if (slot->state == RAW_LOG_STREAM_SLOT_INFLIGHT)
+        {
+            slot->state = RAW_LOG_STREAM_SLOT_READY;
+            raw_log_stream_note_ready_slot(stream);
+        }
     }
 
+    memset(stream->inflight_slot_indices, 0, sizeof(stream->inflight_slot_indices));
+    stream->inflight_slot_count = 0U;
     stream->inflight_valid = 0U;
 }
 
 static void raw_log_stream_release_inflight(raw_log_stream_t *stream)
 {
+    uint32_t i;
+    uint32_t slot_index;
+
     if ((stream == NULL) || (stream->inflight_valid == 0U))
     {
         return;
     }
 
-    raw_log_stream_reset_slot(&stream->slots[stream->inflight_slot_index]);
+    for (i = 0U; i < stream->inflight_slot_count; i++)
+    {
+        slot_index = stream->inflight_slot_indices[i];
+        if (slot_index >= RAW_LOG_STREAM_SLOT_COUNT)
+        {
+            continue;
+        }
+
+        raw_log_stream_reset_slot(&stream->slots[slot_index]);
+    }
+
+    memset(stream->inflight_slot_indices, 0, sizeof(stream->inflight_slot_indices));
+    stream->inflight_slot_count = 0U;
     stream->inflight_valid = 0U;
+}
+
+static uint32_t raw_log_stream_collect_ready_slots(raw_log_stream_t *stream,
+                                                   const void **payloads,
+                                                   uint32_t *payload_bytes,
+                                                   uint32_t *last_slot_index)
+{
+    uint32_t i;
+    uint32_t scan_index;
+    uint32_t collected = 0U;
+    uint32_t max_contiguous;
+
+    if ((stream == NULL) || (payloads == NULL) || (payload_bytes == NULL) ||
+        (last_slot_index == NULL))
+    {
+        return 0U;
+    }
+
+    max_contiguous = raw_log_writer_get_max_contiguous_write_blocks(&stream->writer);
+    if (max_contiguous == 0U)
+    {
+        return 0U;
+    }
+
+    if (max_contiguous > RAW_LOG_STREAM_DMA_BURST_MAX_BLOCKS)
+    {
+        max_contiguous = RAW_LOG_STREAM_DMA_BURST_MAX_BLOCKS;
+    }
+
+    for (i = 0U; (i < RAW_LOG_STREAM_SLOT_COUNT) && (collected < max_contiguous); i++)
+    {
+        scan_index = (stream->drain_slot_index + i) % RAW_LOG_STREAM_SLOT_COUNT;
+        if (stream->slots[scan_index].state != RAW_LOG_STREAM_SLOT_READY)
+        {
+            continue;
+        }
+
+        stream->slots[scan_index].state = RAW_LOG_STREAM_SLOT_INFLIGHT;
+        stream->inflight_slot_indices[collected] = scan_index;
+        payloads[collected] = stream->slots[scan_index].payload.bytes;
+        payload_bytes[collected] = stream->slots[scan_index].payload_bytes;
+        *last_slot_index = scan_index;
+        collected++;
+    }
+
+    return collected;
 }
 
 void raw_log_stream_init_defaults(raw_log_stream_t *stream)
@@ -166,7 +240,8 @@ raw_log_writer_result_t raw_log_stream_begin(raw_log_stream_t *stream)
 
     stream->fill_slot_index = 0U;
     stream->drain_slot_index = 0U;
-    stream->inflight_slot_index = 0U;
+    memset(stream->inflight_slot_indices, 0, sizeof(stream->inflight_slot_indices));
+    stream->inflight_slot_count = 0U;
     stream->ready_slot_count = 0U;
     stream->high_watermark_ready_slots = 0U;
     stream->produced_packet_count = 0U;
@@ -325,8 +400,11 @@ raw_log_writer_result_t raw_log_stream_sd_task(raw_log_stream_t *stream,
                                                uint8_t *step_ready)
 {
     raw_log_writer_result_t writer_result;
-    raw_log_stream_slot_t *slot;
-    uint32_t ready_slot_index;
+    const void *payloads[RAW_LOG_STREAM_DMA_BURST_MAX_BLOCKS];
+    uint32_t payload_sizes[RAW_LOG_STREAM_DMA_BURST_MAX_BLOCKS];
+    uint32_t ready_count;
+    uint32_t last_slot_index = 0U;
+    uint32_t committed_blocks;
 
     if (step_ready != NULL)
     {
@@ -340,6 +418,8 @@ raw_log_writer_result_t raw_log_stream_sd_task(raw_log_stream_t *stream,
 
     if (stream->inflight_valid != 0U)
     {
+        committed_blocks = stream->inflight_slot_count;
+
         writer_result = raw_log_writer_service_async(&stream->writer, step_info);
         if (writer_result == RAW_LOG_WRITER_IN_PROGRESS)
         {
@@ -353,7 +433,7 @@ raw_log_writer_result_t raw_log_stream_sd_task(raw_log_stream_t *stream,
         }
 
         raw_log_stream_release_inflight(stream);
-        stream->committed_block_count++;
+        stream->committed_block_count += committed_blocks;
 
         if (step_ready != NULL)
         {
@@ -368,24 +448,28 @@ raw_log_writer_result_t raw_log_stream_sd_task(raw_log_stream_t *stream,
         return RAW_LOG_WRITER_OK;
     }
 
-    if (!raw_log_stream_find_slot(stream,
-                                  stream->drain_slot_index,
-                                  RAW_LOG_STREAM_SLOT_READY,
-                                  &ready_slot_index))
+    memset(payloads, 0, sizeof(payloads));
+    memset(payload_sizes, 0, sizeof(payload_sizes));
+    memset(stream->inflight_slot_indices, 0, sizeof(stream->inflight_slot_indices));
+
+    ready_count = raw_log_stream_collect_ready_slots(stream,
+                                                     payloads,
+                                                     payload_sizes,
+                                                     &last_slot_index);
+    if (ready_count == 0U)
     {
         return RAW_LOG_WRITER_OK;
     }
 
-    slot = &stream->slots[ready_slot_index];
-    slot->state = RAW_LOG_STREAM_SLOT_INFLIGHT;
-    stream->ready_slot_count--;
-    stream->inflight_slot_index = ready_slot_index;
+    stream->ready_slot_count -= ready_count;
+    stream->inflight_slot_count = ready_count;
     stream->inflight_valid = 1U;
-    stream->drain_slot_index = (ready_slot_index + 1U) % RAW_LOG_STREAM_SLOT_COUNT;
-
-    writer_result = raw_log_writer_start_payload_async(&stream->writer,
-                                                       slot->payload.bytes,
-                                                       slot->payload_bytes);
+    stream->drain_slot_index = (last_slot_index + 1U) % RAW_LOG_STREAM_SLOT_COUNT;
+// breakpoint1: 4개 슬롯이 한번에 consumer로 넘어가는지
+    writer_result = raw_log_writer_start_payloads_async(&stream->writer,
+                                                        payloads,
+                                                        payload_sizes,
+                                                        ready_count);
     if (writer_result != RAW_LOG_WRITER_OK)
     {
         raw_log_stream_requeue_inflight(stream);

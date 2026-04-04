@@ -1,0 +1,480 @@
+#include "raw_log_stream.h"
+
+#include <string.h>
+
+#ifndef APP_DUMMY_SENSOR_PERIOD_MS
+#define APP_DUMMY_SENSOR_PERIOD_MS 1U
+#endif
+
+static void raw_log_stream_reset_slot(raw_log_stream_slot_t *slot)
+{
+    if (slot == NULL)
+    {
+        return;
+    }
+
+    memset(slot, 0, sizeof(*slot));
+    slot->state = RAW_LOG_STREAM_SLOT_FREE;
+}
+
+static int raw_log_stream_find_slot(const raw_log_stream_t *stream,
+                                    uint32_t start_index,
+                                    uint8_t wanted_state,
+                                    uint32_t *slot_index)
+{
+    uint32_t i;
+    uint32_t idx;
+
+    if ((stream == NULL) || (slot_index == NULL))
+    {
+        return 0;
+    }
+
+    for (i = 0U; i < RAW_LOG_STREAM_SLOT_COUNT; i++)
+    {
+        idx = (start_index + i) % RAW_LOG_STREAM_SLOT_COUNT;
+        if (stream->slots[idx].state == wanted_state)
+        {
+            *slot_index = idx;
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static void raw_log_stream_note_ready_slot(raw_log_stream_t *stream)
+{
+    if (stream == NULL)
+    {
+        return;
+    }
+
+    stream->ready_slot_count++;
+    if (stream->ready_slot_count > stream->high_watermark_ready_slots)
+    {
+        stream->high_watermark_ready_slots = stream->ready_slot_count;
+    }
+}
+
+static void raw_log_stream_fill_dummy_packet(raw_log_stream_t *stream,
+                                             uint8_t *dst,
+                                             uint32_t bytes)
+{
+    uint32_t i;
+    uint32_t now;
+    raw_log_dummy_packet_t *packet;
+
+    if ((stream == NULL) || (dst == NULL) || (bytes < sizeof(raw_log_dummy_packet_t)))
+    {
+        return;
+    }
+
+    now = HAL_GetTick();
+    packet = (raw_log_dummy_packet_t *)dst;
+
+    memset(packet, 0, sizeof(*packet));
+    packet->magic = RAW_LOG_DUMMY_PACKET_MAGIC;
+    packet->packet_seq = stream->produced_packet_count;
+    packet->tick_ms = now;
+    packet->writer_seq_snapshot = stream->writer.state.write_seq;
+    packet->ready_slots_snapshot = stream->ready_slot_count;
+    packet->dropped_packets_snapshot = stream->dropped_packet_count;
+    packet->committed_blocks_snapshot = stream->committed_block_count;
+    packet->reserved0 = stream->dummy_seed;
+
+    for (i = 0U; i < sizeof(packet->tail); i++)
+    {
+        packet->tail[i] = (uint8_t)((stream->dummy_seed + now + i) & 0xFFU);
+    }
+
+    stream->dummy_seed += 0x31U;
+}
+
+static void raw_log_stream_requeue_inflight(raw_log_stream_t *stream)
+{
+    raw_log_stream_slot_t *slot;
+    uint32_t i;
+    uint32_t slot_index;
+
+    if ((stream == NULL) || (stream->inflight_valid == 0U))
+    {
+        return;
+    }
+
+    for (i = 0U; i < stream->inflight_slot_count; i++)
+    {
+        slot_index = stream->inflight_slot_indices[i];
+        if (slot_index >= RAW_LOG_STREAM_SLOT_COUNT)
+        {
+            continue;
+        }
+
+        slot = &stream->slots[slot_index];
+        if (slot->state == RAW_LOG_STREAM_SLOT_INFLIGHT)
+        {
+            slot->state = RAW_LOG_STREAM_SLOT_READY;
+            raw_log_stream_note_ready_slot(stream);
+        }
+    }
+
+    memset(stream->inflight_slot_indices, 0, sizeof(stream->inflight_slot_indices));
+    stream->inflight_slot_count = 0U;
+    stream->inflight_valid = 0U;
+}
+
+static void raw_log_stream_release_inflight(raw_log_stream_t *stream)
+{
+    uint32_t i;
+    uint32_t slot_index;
+
+    if ((stream == NULL) || (stream->inflight_valid == 0U))
+    {
+        return;
+    }
+
+    for (i = 0U; i < stream->inflight_slot_count; i++)
+    {
+        slot_index = stream->inflight_slot_indices[i];
+        if (slot_index >= RAW_LOG_STREAM_SLOT_COUNT)
+        {
+            continue;
+        }
+
+        raw_log_stream_reset_slot(&stream->slots[slot_index]);
+    }
+
+    memset(stream->inflight_slot_indices, 0, sizeof(stream->inflight_slot_indices));
+    stream->inflight_slot_count = 0U;
+    stream->inflight_valid = 0U;
+}
+
+static uint32_t raw_log_stream_collect_ready_slots(raw_log_stream_t *stream,
+                                                   const void **payloads,
+                                                   uint32_t *payload_bytes,
+                                                   uint32_t *last_slot_index)
+{
+    uint32_t i;
+    uint32_t scan_index;
+    uint32_t collected = 0U;
+    uint32_t max_contiguous;
+
+    if ((stream == NULL) || (payloads == NULL) || (payload_bytes == NULL) ||
+        (last_slot_index == NULL))
+    {
+        return 0U;
+    }
+
+    max_contiguous = raw_log_writer_get_max_contiguous_write_blocks(&stream->writer);
+    if (max_contiguous == 0U)
+    {
+        return 0U;
+    }
+
+    if (max_contiguous > RAW_LOG_STREAM_DMA_BURST_MAX_BLOCKS)
+    {
+        max_contiguous = RAW_LOG_STREAM_DMA_BURST_MAX_BLOCKS;
+    }
+
+    for (i = 0U; (i < RAW_LOG_STREAM_SLOT_COUNT) && (collected < max_contiguous); i++)
+    {
+        scan_index = (stream->drain_slot_index + i) % RAW_LOG_STREAM_SLOT_COUNT;
+        if (stream->slots[scan_index].state != RAW_LOG_STREAM_SLOT_READY)
+        {
+            continue;
+        }
+
+        stream->slots[scan_index].state = RAW_LOG_STREAM_SLOT_INFLIGHT;
+        stream->inflight_slot_indices[collected] = scan_index;
+        payloads[collected] = stream->slots[scan_index].payload.bytes;
+        payload_bytes[collected] = stream->slots[scan_index].payload_bytes;
+        *last_slot_index = scan_index;
+        collected++;
+    }
+
+    return collected;
+}
+
+void raw_log_stream_init_defaults(raw_log_stream_t *stream)
+{
+    uint32_t i;
+
+    if (stream == NULL)
+    {
+        return;
+    }
+
+    memset(stream, 0, sizeof(*stream));
+    raw_log_writer_init_defaults(&stream->writer);
+    raw_log_writer_set_payload_flags(&stream->writer,
+                                     RAW_LOG_FLAG_PAYLOAD_DUMMY_SENSOR);
+
+    for (i = 0U; i < RAW_LOG_STREAM_SLOT_COUNT; i++)
+    {
+        raw_log_stream_reset_slot(&stream->slots[i]);
+    }
+
+    stream->dummy_period_ms = APP_DUMMY_SENSOR_PERIOD_MS;
+    stream->fill_slot_index = 0U;
+    stream->drain_slot_index = 0U;
+    stream->dummy_seed = 0x12340000UL;
+}
+
+raw_log_writer_result_t raw_log_stream_begin(raw_log_stream_t *stream)
+{
+    uint32_t i;
+
+    if (stream == NULL)
+    {
+        return RAW_LOG_WRITER_ERR_PARAM;
+    }
+
+    raw_sd_reset_retry_stats();
+    raw_log_writer_set_payload_flags(&stream->writer,
+                                     RAW_LOG_FLAG_PAYLOAD_DUMMY_SENSOR);
+
+    for (i = 0U; i < RAW_LOG_STREAM_SLOT_COUNT; i++)
+    {
+        raw_log_stream_reset_slot(&stream->slots[i]);
+    }
+
+    stream->fill_slot_index = 0U;
+    stream->drain_slot_index = 0U;
+    memset(stream->inflight_slot_indices, 0, sizeof(stream->inflight_slot_indices));
+    stream->inflight_slot_count = 0U;
+    stream->ready_slot_count = 0U;
+    stream->high_watermark_ready_slots = 0U;
+    stream->produced_packet_count = 0U;
+    stream->dropped_packet_count = 0U;
+    stream->committed_block_count = 0U;
+    stream->inflight_valid = 0U;
+
+    if (stream->dummy_period_ms == 0U)
+    {
+        stream->dummy_period_ms = 1U;
+    }
+
+    stream->next_dummy_tick_ms = HAL_GetTick() + stream->dummy_period_ms;
+
+    return raw_log_writer_begin(&stream->writer);
+}
+
+uint8_t *raw_log_stream_acquire_write_ptr(raw_log_stream_t *stream,
+                                          uint32_t bytes,
+                                          uint32_t *slot_index)
+{
+    raw_log_stream_slot_t *slot;
+    uint32_t next_slot_index;
+
+    if ((stream == NULL) || (bytes == 0U) || (bytes > RAW_LOG_DATA_PAYLOAD_BYTES_V3))
+    {
+        return NULL;
+    }
+
+    slot = &stream->slots[stream->fill_slot_index];
+
+    if (slot->state == RAW_LOG_STREAM_SLOT_FREE)
+    {
+        slot->state = RAW_LOG_STREAM_SLOT_FILLING;
+        slot->payload_bytes = 0U;
+    }
+
+    if ((slot->state != RAW_LOG_STREAM_SLOT_FILLING) ||
+        ((slot->payload_bytes + bytes) > RAW_LOG_DATA_PAYLOAD_BYTES_V3))
+    {
+        if (!raw_log_stream_find_slot(stream,
+                                      (stream->fill_slot_index + 1U),
+                                      RAW_LOG_STREAM_SLOT_FREE,
+                                      &next_slot_index))
+        {
+            return NULL;
+        }
+
+        stream->fill_slot_index = next_slot_index;
+        slot = &stream->slots[stream->fill_slot_index];
+        memset(slot, 0, sizeof(*slot));
+        slot->state = RAW_LOG_STREAM_SLOT_FILLING;
+    }
+
+    if (slot_index != NULL)
+    {
+        *slot_index = stream->fill_slot_index;
+    }
+
+    return &slot->payload.bytes[slot->payload_bytes];
+}
+
+int raw_log_stream_commit_write(raw_log_stream_t *stream,
+                                uint32_t slot_index,
+                                uint32_t bytes,
+                                uint32_t tick_ms)
+{
+    raw_log_stream_slot_t *slot;
+    uint32_t next_slot_index;
+
+    if ((stream == NULL) || (slot_index >= RAW_LOG_STREAM_SLOT_COUNT) || (bytes == 0U))
+    {
+        return 0;
+    }
+
+    slot = &stream->slots[slot_index];
+    if (slot->state != RAW_LOG_STREAM_SLOT_FILLING)
+    {
+        return 0;
+    }
+
+    if ((slot->payload_bytes + bytes) > RAW_LOG_DATA_PAYLOAD_BYTES_V3)
+    {
+        return 0;
+    }
+
+    slot->payload_bytes += bytes;
+    slot->produced_tick_ms = tick_ms;
+
+    if (slot->payload_bytes == RAW_LOG_DATA_PAYLOAD_BYTES_V3)
+    {
+        slot->state = RAW_LOG_STREAM_SLOT_READY;
+        raw_log_stream_note_ready_slot(stream);
+
+        if (raw_log_stream_find_slot(stream,
+                                     (slot_index + 1U),
+                                     RAW_LOG_STREAM_SLOT_FREE,
+                                     &next_slot_index))
+        {
+            stream->fill_slot_index = next_slot_index;
+        }
+    }
+
+    return 1;
+}
+
+void raw_log_stream_dummy_sensor_task(raw_log_stream_t *stream)
+{
+    uint8_t *dst;
+    uint32_t slot_index;
+    uint32_t now;
+
+    if ((stream == NULL) || (stream->dummy_period_ms == 0U))
+    {
+        return;
+    }
+
+    now = HAL_GetTick();
+
+    while ((int32_t)(now - stream->next_dummy_tick_ms) >= 0)
+    {
+        dst = raw_log_stream_acquire_write_ptr(stream,
+                                               RAW_LOG_SENSOR_PACKET_BYTES,
+                                               &slot_index);
+        if (dst == NULL)
+        {
+            stream->dropped_packet_count++;
+            stream->next_dummy_tick_ms += stream->dummy_period_ms;
+            now = HAL_GetTick();
+            continue;
+        }
+
+        raw_log_stream_fill_dummy_packet(stream,
+                                         dst,
+                                         RAW_LOG_SENSOR_PACKET_BYTES);
+
+        if (raw_log_stream_commit_write(stream,
+                                        slot_index,
+                                        RAW_LOG_SENSOR_PACKET_BYTES,
+                                        now) != 0)
+        {
+            stream->produced_packet_count++;
+        }
+        else
+        {
+            stream->dropped_packet_count++;
+        }
+
+        stream->next_dummy_tick_ms += stream->dummy_period_ms;
+        now = HAL_GetTick();
+    }
+}
+
+raw_log_writer_result_t raw_log_stream_sd_task(raw_log_stream_t *stream,
+                                               raw_log_writer_step_info_t *step_info,
+                                               uint8_t *step_ready)
+{
+    raw_log_writer_result_t writer_result;
+    const void *payloads[RAW_LOG_STREAM_DMA_BURST_MAX_BLOCKS];
+    uint32_t payload_sizes[RAW_LOG_STREAM_DMA_BURST_MAX_BLOCKS];
+    uint32_t ready_count;
+    uint32_t last_slot_index = 0U;
+    uint32_t committed_blocks;
+
+    if (step_ready != NULL)
+    {
+        *step_ready = 0U;
+    }
+
+    if (stream == NULL)
+    {
+        return RAW_LOG_WRITER_ERR_PARAM;
+    }
+
+    if (stream->inflight_valid != 0U)
+    {
+        committed_blocks = stream->inflight_slot_count;
+
+        writer_result = raw_log_writer_service_async(&stream->writer, step_info);
+        if (writer_result == RAW_LOG_WRITER_IN_PROGRESS)
+        {
+            return RAW_LOG_WRITER_IN_PROGRESS;
+        }
+
+        if (writer_result != RAW_LOG_WRITER_OK)
+        {
+            raw_log_stream_requeue_inflight(stream);
+            return writer_result;
+        }
+
+        raw_log_stream_release_inflight(stream);
+        stream->committed_block_count += committed_blocks;
+
+        if (step_ready != NULL)
+        {
+            *step_ready = 1U;
+        }
+
+        return RAW_LOG_WRITER_OK;
+    }
+
+    if (stream->ready_slot_count == 0U)
+    {
+        return RAW_LOG_WRITER_OK;
+    }
+
+    memset(payloads, 0, sizeof(payloads));
+    memset(payload_sizes, 0, sizeof(payload_sizes));
+    memset(stream->inflight_slot_indices, 0, sizeof(stream->inflight_slot_indices));
+
+    ready_count = raw_log_stream_collect_ready_slots(stream,
+                                                     payloads,
+                                                     payload_sizes,
+                                                     &last_slot_index);
+    if (ready_count == 0U)
+    {
+        return RAW_LOG_WRITER_OK;
+    }
+
+    stream->ready_slot_count -= ready_count;
+    stream->inflight_slot_count = ready_count;
+    stream->inflight_valid = 1U;
+    stream->drain_slot_index = (last_slot_index + 1U) % RAW_LOG_STREAM_SLOT_COUNT;
+
+    writer_result = raw_log_writer_start_payloads_async(&stream->writer,
+                                                        payloads,
+                                                        payload_sizes,
+                                                        ready_count);
+    if (writer_result != RAW_LOG_WRITER_OK)
+    {
+        raw_log_stream_requeue_inflight(stream);
+        return writer_result;
+    }
+
+    return RAW_LOG_WRITER_IN_PROGRESS;
+}

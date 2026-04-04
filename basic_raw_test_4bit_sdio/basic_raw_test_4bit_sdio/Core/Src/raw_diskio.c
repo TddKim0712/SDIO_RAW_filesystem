@@ -216,6 +216,10 @@ static raw_sd_status_t raw_sd_write_once(uint32_t start_lba,
 
 static raw_sd_status_t raw_sd_async_write_issue(void)
 {
+    g_raw_sd_async_write.irq_done = 0U;
+    g_raw_sd_async_write.irq_error = 0U;
+    g_raw_sd_async_write.start_ms = HAL_GetTick();
+
     if (HAL_SD_WriteBlocks_DMA(&hsd,
                                (uint8_t *)g_raw_sd_async_write.buf,
                                g_raw_sd_async_write.start_lba,
@@ -225,10 +229,7 @@ static raw_sd_status_t raw_sd_async_write_issue(void)
         raw_sd_note_status(RAW_SD_ERR_WRITE);
         return RAW_SD_ERR_WRITE;
     }
-
-    g_raw_sd_async_write.irq_done = 0U;
-    g_raw_sd_async_write.irq_error = 0U;
-    g_raw_sd_async_write.start_ms = HAL_GetTick();
+    //breakpoint3: dma 시작 지점
 
     return RAW_SD_IN_PROGRESS;
 }

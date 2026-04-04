@@ -2,6 +2,10 @@
 <section name="Workbench">
 	<item key="hasShownOverlayPopupBefore" value="true"/>
 	<item key="replaceBarOpen" value="false"/>
+	<list key="searchhistory">
+		<item value="mx"/>
+		<item value="write"/>
+	</list>
 	<section name="org.eclipse.ui.texteditor.FindReplaceDialog">
 		<item key="selection" value=""/>
 		<item key="wrap" value="true"/>

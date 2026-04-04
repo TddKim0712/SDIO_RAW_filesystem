@@ -60,6 +60,8 @@ static void raw_log_writer_fill_step_info(raw_log_writer_t *writer,
 
     memset(step_info, 0, sizeof(*step_info));
     step_info->seq = writer->state.write_seq;
+    step_info->last_seq = writer->state.write_seq;
+    step_info->block_count = 1U;
     step_info->data_lba = data_lba;
     step_info->next_data_lba = raw_log_wrap_data_lba(data_lba + 1U,
                                                      &writer->cfg,
@@ -102,6 +104,119 @@ static raw_log_writer_result_t raw_log_writer_complete_write(raw_log_writer_t *w
                               superblock_ms,
                               (data_ms + superblock_ms),
                               superblock_written);
+
+    return RAW_LOG_WRITER_OK;
+}
+
+
+static void raw_log_writer_fill_burst_step_info(raw_log_writer_t *writer,
+                                                raw_log_writer_step_info_t *step_info,
+                                                uint32_t first_seq,
+                                                uint32_t last_seq,
+                                                uint32_t block_count,
+                                                uint32_t first_data_lba,
+                                                uint32_t superblock_lba,
+                                                uint32_t data_ms,
+                                                uint32_t superblock_ms,
+                                                int superblock_written)
+{
+    uint32_t total_ms;
+
+    if ((writer == NULL) || (step_info == NULL))
+    {
+        return;
+    }
+
+    total_ms = data_ms + superblock_ms;
+
+    memset(step_info, 0, sizeof(*step_info));
+    step_info->seq = first_seq;
+    step_info->last_seq = last_seq;
+    step_info->block_count = block_count;
+    step_info->data_lba = first_data_lba;
+    step_info->next_data_lba = writer->state.next_data_lba;
+    step_info->superblock_lba = superblock_lba;
+    step_info->data_ms = data_ms;
+    step_info->superblock_ms = superblock_ms;
+    step_info->total_ms = total_ms;
+    step_info->stall_count = writer->state.stall_count;
+    step_info->superblock_written = (uint8_t)superblock_written;
+    step_info->stall = (uint8_t)((total_ms >= writer->cfg.stall_threshold_ms) ? 1U : 0U);
+}
+
+static void raw_log_writer_commit_burst_state(raw_log_writer_t *writer,
+                                              uint32_t last_data_lba,
+                                              uint32_t block_count,
+                                              uint32_t data_ms,
+                                              uint32_t superblock_ms,
+                                              int superblock_written)
+{
+    if ((writer == NULL) || (block_count == 0U))
+    {
+        return;
+    }
+
+    raw_log_on_write_complete(&writer->state,
+                              &writer->cfg,
+                              last_data_lba,
+                              data_ms,
+                              superblock_ms,
+                              (data_ms + superblock_ms),
+                              superblock_written);
+
+    if (block_count > 1U)
+    {
+        writer->state.write_seq += (block_count - 1U);
+    }
+}
+
+static raw_log_writer_result_t raw_log_writer_finish_async_burst(raw_log_writer_t *writer,
+                                                                 raw_log_writer_step_info_t *step_info,
+                                                                 int superblock_written)
+{
+    uint32_t first_seq;
+    uint32_t last_seq;
+    uint32_t block_count;
+    uint32_t first_data_lba;
+    uint32_t last_data_lba;
+    uint32_t superblock_lba;
+    uint32_t data_ms;
+    uint32_t superblock_ms;
+
+    if (writer == NULL)
+    {
+        return RAW_LOG_WRITER_ERR_PARAM;
+    }
+
+    first_seq = writer->async.first_seq;
+    last_seq = writer->async.last_seq;
+    block_count = writer->async.block_count;
+    first_data_lba = writer->async.data_lba;
+    last_data_lba = writer->async.last_data_lba;
+    superblock_lba = (superblock_written != 0) ? writer->async.superblock_lba : 0U;
+    data_ms = writer->async.data_ms;
+    superblock_ms = (superblock_written != 0) ? writer->async.superblock_ms : 0U;
+
+    raw_log_writer_commit_burst_state(writer,
+                                      last_data_lba,
+                                      block_count,
+                                      data_ms,
+                                      superblock_ms,
+                                      superblock_written);
+
+    raw_log_writer_fill_burst_step_info(writer,
+                                        step_info,
+                                        first_seq,
+                                        last_seq,
+                                        block_count,
+                                        first_data_lba,
+                                        superblock_lba,
+                                        data_ms,
+                                        superblock_ms,
+                                        superblock_written);
+
+    memset(&writer->async, 0, sizeof(writer->async));
+    writer->async.state = RAW_LOG_WRITER_ASYNC_IDLE;
 
     return RAW_LOG_WRITER_OK;
 }
@@ -267,6 +382,7 @@ raw_log_writer_result_t raw_log_writer_write_payload(raw_log_writer_t *writer,
                                          superblock_written);
 }
 
+
 int raw_log_writer_async_busy(const raw_log_writer_t *writer)
 {
     if (writer == NULL)
@@ -277,21 +393,39 @@ int raw_log_writer_async_busy(const raw_log_writer_t *writer)
     return ((writer->async.state != RAW_LOG_WRITER_ASYNC_IDLE) ? 1 : 0);
 }
 
-raw_log_writer_result_t raw_log_writer_start_payload_async(raw_log_writer_t *writer,
-                                                           const void *payload,
-                                                           uint32_t payload_bytes)
+uint32_t raw_log_writer_get_max_contiguous_write_blocks(const raw_log_writer_t *writer)
 {
-    raw_log_data_block_v3_t *db;
-    raw_sd_status_t sd_status;
-    uint32_t data_lba;
-    uint32_t tick_ms;
-
-    if ((writer == NULL) || ((payload == NULL) && (payload_bytes != 0U)))
+    if (writer == NULL)
     {
-        return RAW_LOG_WRITER_ERR_PARAM;
+        return 0U;
     }
 
-    if (payload_bytes > RAW_LOG_DATA_PAYLOAD_BYTES_V3)
+    if ((writer->state.card_block_count <= writer->cfg.data_start_lba) ||
+        (writer->state.next_data_lba < writer->cfg.data_start_lba) ||
+        (writer->state.next_data_lba >= writer->state.card_block_count))
+    {
+        return 0U;
+    }
+
+    return (writer->state.card_block_count - writer->state.next_data_lba);
+}
+
+raw_log_writer_result_t raw_log_writer_start_payloads_async(raw_log_writer_t *writer,
+                                                            const void **payloads,
+                                                            const uint32_t *payload_bytes,
+                                                            uint32_t block_count)
+{
+    raw_log_data_block_v3_t *db;
+    raw_log_state_t build_state;
+    raw_sd_status_t sd_status;
+    uint32_t tick_ms;
+    uint32_t i;
+    uint32_t current_lba;
+    uint32_t current_seq;
+    uint32_t max_contiguous_blocks;
+
+    if ((writer == NULL) || (payloads == NULL) || (payload_bytes == NULL) ||
+        (block_count == 0U) || (block_count > RAW_LOG_WRITER_ASYNC_MAX_BLOCKS))
     {
         return RAW_LOG_WRITER_ERR_PARAM;
     }
@@ -301,39 +435,75 @@ raw_log_writer_result_t raw_log_writer_start_payload_async(raw_log_writer_t *wri
         return RAW_LOG_WRITER_ERR_STATE;
     }
 
-    data_lba = writer->state.next_data_lba;
-    tick_ms = HAL_GetTick();
+    max_contiguous_blocks = raw_log_writer_get_max_contiguous_write_blocks(writer);
+    if ((max_contiguous_blocks == 0U) || (block_count > max_contiguous_blocks))
+    {
+        return RAW_LOG_WRITER_ERR_PARAM;
+    }
 
-    db = (raw_log_data_block_v3_t *)writer->tx_block;
-    raw_log_build_data_block_v3(db,
-                                &writer->state,
-                                data_lba,
-                                tick_ms,
-                                payload,
-                                payload_bytes,
-                                writer->payload_flags);
+    tick_ms = HAL_GetTick();
+    build_state = writer->state;
 
     memset(&writer->async, 0, sizeof(writer->async));
     writer->async.state = RAW_LOG_WRITER_ASYNC_DATA_BUSY;
-    writer->async.data_lba = data_lba;
+    writer->async.data_lba = build_state.next_data_lba;
+    writer->async.first_seq = build_state.write_seq;
+    writer->async.block_count = block_count;
     writer->async.superblock_lba = raw_log_get_superblock_lba(&writer->cfg, &writer->state);
     writer->async.tick_ms = tick_ms;
-    writer->async.superblock_needed =
-        (uint8_t)raw_log_should_write_superblock(&writer->cfg, &writer->state);
+
+    for (i = 0U; i < block_count; i++)
+    {
+        if (((payloads[i] == NULL) && (payload_bytes[i] != 0U)) ||
+            (payload_bytes[i] > RAW_LOG_DATA_PAYLOAD_BYTES_V3))
+        {
+            writer->async.state = RAW_LOG_WRITER_ASYNC_IDLE;
+            return RAW_LOG_WRITER_ERR_PARAM;
+        }
+
+        current_lba = build_state.next_data_lba;
+        current_seq = build_state.write_seq;
+
+        db = (raw_log_data_block_v3_t *)&writer->tx_burst_blocks[
+            i * (RAW_SD_BLOCK_SIZE / sizeof(uint32_t))];
+        raw_log_build_data_block_v3(db,
+                                    &build_state,
+                                    current_lba,
+                                    tick_ms,
+                                    payloads[i],
+                                    payload_bytes[i],
+                                    writer->payload_flags);
+
+        if (raw_log_should_write_superblock(&writer->cfg, &build_state) != 0)
+        {
+            writer->async.superblock_needed = 1U;
+        }
+
+        writer->async.last_data_lba = current_lba;
+        writer->async.last_seq = current_seq;
+
+        build_state.last_written_lba = current_lba;
+        build_state.next_data_lba = raw_log_wrap_data_lba(current_lba + 1U,
+                                                          &writer->cfg,
+                                                          build_state.card_block_count);
+        build_state.write_seq = current_seq + 1U;
+    }
 
     if (writer->async.superblock_needed != 0U)
     {
         writer->async.checkpoint_state = writer->state;
-        writer->async.checkpoint_state.last_written_lba = data_lba;
-        writer->async.checkpoint_state.next_data_lba =
-            raw_log_wrap_data_lba(data_lba + 1U,
-                                  &writer->cfg,
-                                  writer->state.card_block_count);
+        writer->async.checkpoint_state.write_seq = writer->async.last_seq;
+        writer->async.checkpoint_state.last_written_lba = writer->async.last_data_lba;
+        writer->async.checkpoint_state.next_data_lba = build_state.next_data_lba;
     }
 
     writer->async.data_start_ms = HAL_GetTick();
 
-    sd_status = raw_sd_write_blocks_async_start(data_lba, writer->tx_block, 1U);
+    sd_status = raw_sd_write_blocks_async_start(writer->async.data_lba,
+                                                writer->tx_burst_blocks,
+                                                block_count);
+
+    // breakpoint2: lba 4개 연속 요청 확인
     if ((sd_status != RAW_SD_IN_PROGRESS) && (sd_status != RAW_SD_OK))
     {
         writer->async.state = RAW_LOG_WRITER_ASYNC_IDLE;
@@ -341,6 +511,22 @@ raw_log_writer_result_t raw_log_writer_start_payload_async(raw_log_writer_t *wri
     }
 
     return RAW_LOG_WRITER_OK;
+}
+
+raw_log_writer_result_t raw_log_writer_start_payload_async(raw_log_writer_t *writer,
+                                                           const void *payload,
+                                                           uint32_t payload_bytes)
+{
+    const void *payload_list[1];
+    uint32_t payload_size_list[1];
+
+    payload_list[0] = payload;
+    payload_size_list[0] = payload_bytes;
+
+    return raw_log_writer_start_payloads_async(writer,
+                                               payload_list,
+                                               payload_size_list,
+                                               1U);
 }
 
 raw_log_writer_result_t raw_log_writer_service_async(raw_log_writer_t *writer,
@@ -400,31 +586,18 @@ raw_log_writer_result_t raw_log_writer_service_async(raw_log_writer_t *writer,
             return RAW_LOG_WRITER_IN_PROGRESS;
         }
 
-        writer->async.state = RAW_LOG_WRITER_ASYNC_IDLE;
-        writer->async.superblock_needed = 0U;
-
-        return raw_log_writer_complete_write(writer,
-                                             step_info,
-                                             writer->async.data_lba,
-                                             0U,
-                                             writer->async.data_ms,
-                                             0U,
-                                             0);
+        return raw_log_writer_finish_async_burst(writer,
+                                                 step_info,
+                                                 0);
     }
 
     if (writer->async.state == RAW_LOG_WRITER_ASYNC_SUPERBLOCK_BUSY)
     {
         writer->async.superblock_ms = HAL_GetTick() - writer->async.superblock_start_ms;
-        writer->async.state = RAW_LOG_WRITER_ASYNC_IDLE;
-        writer->async.superblock_needed = 0U;
 
-        return raw_log_writer_complete_write(writer,
-                                             step_info,
-                                             writer->async.data_lba,
-                                             writer->async.superblock_lba,
-                                             writer->async.data_ms,
-                                             writer->async.superblock_ms,
-                                             1);
+        return raw_log_writer_finish_async_burst(writer,
+                                                 step_info,
+                                                 1);
     }
 
     writer->async.state = RAW_LOG_WRITER_ASYNC_IDLE;

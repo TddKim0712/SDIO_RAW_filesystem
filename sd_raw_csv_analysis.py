@@ -31,10 +31,6 @@ RAW_TAIL_MAGIC = 0xA55A5AA5
 RAW_SENSOR_PACKET_BYTES = 64
 RAW_DATA_HEADER_BYTES_V3 = 64
 RAW_DATA_PAYLOAD_BYTES_V3 = DEFAULT_SECTOR_SIZE - RAW_DATA_HEADER_BYTES_V3
-RAW_LOG_FLAG_PAYLOAD_LINEAR_TEST = 0x00000001
-RAW_LOG_FLAG_PAYLOAD_DUMMY_SENSOR = 0x00000002
-RAW_LOG_FLAG_PAYLOAD_SENSOR_DMA = 0x00000004
-RAW_DUMMY_PACKET_MAGIC = 0x44554D59
 
 GENERIC_READ = 0x80000000
 GENERIC_WRITE = 0x40000000
@@ -102,12 +98,6 @@ PARSED_EXPORT_FIELDS = [
     "payload_crc32",
     "block_crc32",
     "flags",
-    "payload_mode",
-    "dummy_packet_count",
-    "dummy_packet_magic_ok",
-    "dummy_packet_magic_ok_count",
-    "dummy_packet_first_seq",
-    "dummy_packet_last_seq",
     "payload_crc_ok",
     "block_crc_ok",
     "crc_ok",
@@ -481,76 +471,6 @@ def count_test_pattern_mismatches(payload: bytes, seq: int, lba: int, payload_by
 
 
 
-def parse_dummy_packets(payload: bytes, payload_bytes: int, packet_bytes: int) -> dict:
-    usable_bytes = min(len(payload), max(0, payload_bytes))
-    full_packet_bytes = 0
-    packet_count = 0
-    magic_ok_count = 0
-    first_seq = None
-    last_seq = None
-
-    if packet_bytes <= 0:
-        return {
-            "dummy_packet_count": 0,
-            "dummy_packet_magic_ok": None,
-            "dummy_packet_magic_ok_count": 0,
-            "dummy_packet_first_seq": "",
-            "dummy_packet_last_seq": "",
-        }
-
-    full_packet_bytes = usable_bytes - (usable_bytes % packet_bytes)
-    packet_count = full_packet_bytes // packet_bytes
-
-    for packet_idx in range(packet_count):
-        off = packet_idx * packet_bytes
-        packet = payload[off:off + packet_bytes]
-        if len(packet) < 8:
-            continue
-
-        magic, packet_seq = struct.unpack_from("<2I", packet, 0)
-        if magic == RAW_DUMMY_PACKET_MAGIC:
-            magic_ok_count += 1
-        if first_seq is None:
-            first_seq = packet_seq
-        last_seq = packet_seq
-
-    return {
-        "dummy_packet_count": packet_count,
-        "dummy_packet_magic_ok": (None if packet_count == 0 else (magic_ok_count == packet_count)),
-        "dummy_packet_magic_ok_count": magic_ok_count,
-        "dummy_packet_first_seq": "" if first_seq is None else first_seq,
-        "dummy_packet_last_seq": "" if last_seq is None else last_seq,
-    }
-
-
-
-def detect_payload_mode(flags: int,
-                        packet_bytes: int,
-                        payload: bytes,
-                        payload_bytes: int,
-                        mismatch_count: int,
-                        dummy_info: dict) -> str:
-    if (flags & RAW_LOG_FLAG_PAYLOAD_DUMMY_SENSOR) != 0:
-        return "dummy_packets"
-    if (flags & RAW_LOG_FLAG_PAYLOAD_LINEAR_TEST) != 0:
-        return "linear_test"
-    if (flags & RAW_LOG_FLAG_PAYLOAD_SENSOR_DMA) != 0:
-        return "sensor_dma"
-
-    if (
-        packet_bytes == RAW_SENSOR_PACKET_BYTES
-        and dummy_info.get("dummy_packet_count", 0) > 0
-        and dummy_info.get("dummy_packet_magic_ok") is True
-    ):
-        return "dummy_packets(auto)"
-
-    if payload_bytes > 0 and mismatch_count == 0:
-        return "linear_test(auto)"
-
-    return "unknown"
-
-
-
 def pct_text(numerator: int, denominator: int) -> str:
     if denominator <= 0:
         return "n/a"
@@ -756,12 +676,6 @@ def parse_data_block_v2_info(data: bytes) -> dict | None:
         "cycle_superblock_ms": sb_ms,
         "cycle_total_ms": total_ms,
         "payload_bytes": len(payload),
-        "payload_mode": "linear_test(v2)",
-        "dummy_packet_count": "",
-        "dummy_packet_magic_ok": "",
-        "dummy_packet_magic_ok_count": "",
-        "dummy_packet_first_seq": "",
-        "dummy_packet_last_seq": "",
         "payload_first_16": payload[:16].hex(" "),
         "payload_last_16": payload[-16:].hex(" ") if payload else "",
         "test_pattern_ok": (mismatch_count == 0),
@@ -799,22 +713,6 @@ def parse_data_block_v3_info(data: bytes) -> dict | None:
     payload_crc_ok = (payload_bytes <= len(payload)) and (payload_crc32 == payload_crc_calc)
     block_crc_ok = (block_crc32 == block_crc_calc)
     mismatch_count, first_bad = count_test_pattern_mismatches(payload, seq, declared_lba, payload_bytes)
-    dummy_info = parse_dummy_packets(usable_payload, payload_bytes, packet_bytes)
-    payload_mode = detect_payload_mode(flags,
-                                       packet_bytes,
-                                       usable_payload,
-                                       payload_bytes,
-                                       mismatch_count,
-                                       dummy_info)
-
-    if payload_mode.startswith("linear_test"):
-        test_pattern_ok = (mismatch_count == 0)
-        test_pattern_mismatch_count = mismatch_count
-        test_pattern_first_bad_offset = "" if first_bad is None else first_bad
-    else:
-        test_pattern_ok = ""
-        test_pattern_mismatch_count = ""
-        test_pattern_first_bad_offset = ""
 
     return {
         "kind": "data_block_v3",
@@ -840,21 +738,16 @@ def parse_data_block_v3_info(data: bytes) -> dict | None:
         "payload_crc32": fmt_hex32(payload_crc32),
         "block_crc32": fmt_hex32(block_crc32),
         "flags": flags,
-        "payload_mode": payload_mode,
-        "dummy_packet_count": dummy_info.get("dummy_packet_count", 0),
-        "dummy_packet_magic_ok": dummy_info.get("dummy_packet_magic_ok"),
-        "dummy_packet_magic_ok_count": dummy_info.get("dummy_packet_magic_ok_count", 0),
-        "dummy_packet_first_seq": dummy_info.get("dummy_packet_first_seq", ""),
-        "dummy_packet_last_seq": dummy_info.get("dummy_packet_last_seq", ""),
         "payload_crc_ok": payload_crc_ok,
         "block_crc_ok": block_crc_ok,
         "crc_ok": payload_crc_ok and block_crc_ok,
         "payload_first_16": usable_payload[:16].hex(" "),
         "payload_last_16": usable_payload[-16:].hex(" ") if usable_payload else "",
-        "test_pattern_ok": test_pattern_ok,
-        "test_pattern_mismatch_count": test_pattern_mismatch_count,
-        "test_pattern_first_bad_offset": test_pattern_first_bad_offset,
+        "test_pattern_ok": (mismatch_count == 0),
+        "test_pattern_mismatch_count": mismatch_count,
+        "test_pattern_first_bad_offset": "" if first_bad is None else first_bad,
     }
+
 
 
 def parse_sector_info(lba: int, data: bytes) -> dict:
@@ -997,12 +890,6 @@ def format_parsed_info(info: dict) -> str:
             f"  block_crc_ok={info.get('block_crc_ok', '')}",
             f"  crc_ok={info.get('crc_ok', '')}",
             f"  flags={info.get('flags', '')}",
-            f"  payload_mode={info.get('payload_mode', '')}",
-            f"  dummy_packet_count={info.get('dummy_packet_count', '')}",
-            f"  dummy_packet_magic_ok={info.get('dummy_packet_magic_ok', '')}",
-            f"  dummy_packet_magic_ok_count={info.get('dummy_packet_magic_ok_count', '')}",
-            f"  dummy_packet_first_seq={info.get('dummy_packet_first_seq', '')}",
-            f"  dummy_packet_last_seq={info.get('dummy_packet_last_seq', '')}",
             f"  payload_first_16={info.get('payload_first_16', '')}",
             f"  payload_last_16={info.get('payload_last_16', '')}",
             f"  test_pattern_ok={info.get('test_pattern_ok', '')}",
@@ -1011,6 +898,7 @@ def format_parsed_info(info: dict) -> str:
         ])
 
     return "\n".join(lines)
+
 
 
 def device_flags_text(drive: dict) -> str:
@@ -1050,8 +938,6 @@ def make_event(event_type: str, lba: int, seq=None, boot=None, value=None, detai
 
 
 def analyze_infos(infos: list[dict], stall_threshold_ms: int, assume_dummy_pattern: bool) -> tuple[str, list[dict]]:
-    force_linear_pattern_check = assume_dummy_pattern
-
     events: list[dict] = []
     counts = Counter(info.get("kind", "unknown") for info in infos)
     data_infos = [info for info in infos if is_data_kind(info.get("kind", ""))]
@@ -1060,8 +946,7 @@ def analyze_infos(infos: list[dict], stall_threshold_ms: int, assume_dummy_patte
 
     payload_crc_fail = 0
     block_crc_fail = 0
-    linear_pattern_fail = 0
-    dummy_magic_fail = 0
+    pattern_fail = 0
     declared_lba_mismatch = 0
     seq_gap_count = 0
     missing_seq_blocks = 0
@@ -1069,11 +954,6 @@ def analyze_infos(infos: list[dict], stall_threshold_ms: int, assume_dummy_patte
     backward_seq_count = 0
     actual_lba_gap_count = 0
     boot_change_count = 0
-
-    dummy_mode_count = 0
-    linear_mode_count = 0
-    sensor_dma_mode_count = 0
-    unknown_payload_mode_count = 0
 
     tick_deltas: list[int] = []
     cycle_data_ms_values: list[int] = []
@@ -1089,26 +969,18 @@ def analyze_infos(infos: list[dict], stall_threshold_ms: int, assume_dummy_patte
         elif safe_int(sb.get("write_seq"), -1) > safe_int(latest_super.get("write_seq"), -1):
             latest_super = sb
 
-    data_start_lba = safe_int(latest_super.get("data_start_lba")) if latest_super is not None else None
-    next_data_lba = safe_int(latest_super.get("next_data_lba")) if latest_super is not None else None
-
-    unknown_before_next_data_lba = 0
-    unknown_after_next_data_lba = 0
+    inferred_data_start_lba = None
+    if latest_super is not None:
+        inferred_data_start_lba = safe_int(latest_super.get("data_start_lba"))
+    elif data_infos:
+        inferred_data_start_lba = min(info["lba"] for info in data_infos)
 
     for info in unknown_infos:
-        lba = info["lba"]
+        in_data_area = (inferred_data_start_lba is not None) and (info["lba"] >= inferred_data_start_lba)
         detail = f"first16={info['first_16']}"
-
-        if (data_start_lba is not None) and (next_data_lba is not None):
-            if data_start_lba <= lba < next_data_lba:
-                unknown_before_next_data_lba += 1
-                detail += " / before next_data_lba"
-                events.append(make_event("UNKNOWN_IN_WRITTEN_WINDOW", lba, value=info.get("unique_bytes"), detail=detail))
-            elif lba >= next_data_lba:
-                unknown_after_next_data_lba += 1
-        elif (data_start_lba is not None) and (lba >= data_start_lba):
+        if in_data_area:
             detail += " / data area"
-            events.append(make_event("UNKNOWN", lba, value=info.get("unique_bytes"), detail=detail))
+        events.append(make_event("UNKNOWN", info["lba"], value=info.get("unique_bytes"), detail=detail))
 
     previous_data = None
     for info in data_infos:
@@ -1119,16 +991,6 @@ def analyze_infos(infos: list[dict], stall_threshold_ms: int, assume_dummy_patte
         cycle_total_ms = safe_int(info.get("cycle_total_ms"))
         cycle_data_ms = safe_int(info.get("cycle_data_ms"))
         cycle_super_ms = safe_int(info.get("cycle_superblock_ms"))
-        payload_mode = str(info.get("payload_mode") or "")
-
-        if payload_mode.startswith("dummy_packets"):
-            dummy_mode_count += 1
-        elif payload_mode.startswith("linear_test"):
-            linear_mode_count += 1
-        elif payload_mode == "sensor_dma":
-            sensor_dma_mode_count += 1
-        else:
-            unknown_payload_mode_count += 1
 
         if cycle_data_ms is not None:
             cycle_data_ms_values.append(cycle_data_ms)
@@ -1178,47 +1040,19 @@ def analyze_infos(infos: list[dict], stall_threshold_ms: int, assume_dummy_patte
                     detail=f"block_crc32={info.get('block_crc32', '')}",
                 ))
 
-            if payload_mode.startswith("dummy_packets"):
-                if info.get("dummy_packet_magic_ok") is False:
-                    dummy_magic_fail += 1
-                    events.append(make_event(
-                        "DUMMY_PACKET_MAGIC_FAIL",
-                        info["lba"],
-                        seq=seq,
-                        boot=boot,
-                        value=info.get("dummy_packet_magic_ok_count"),
-                        detail=(
-                            f"magic_ok={info.get('dummy_packet_magic_ok_count', '')}/"
-                            f"{info.get('dummy_packet_count', '')}"
-                        ),
-                    ))
-            elif payload_mode.startswith("linear_test"):
-                if info.get("test_pattern_ok") is False:
-                    linear_pattern_fail += 1
-                    events.append(make_event(
-                        "LINEAR_PATTERN_FAIL",
-                        info["lba"],
-                        seq=seq,
-                        boot=boot,
-                        value=info.get("test_pattern_mismatch_count"),
-                        detail=(
-                            f"mismatch={info.get('test_pattern_mismatch_count', '')}, "
-                            f"first_bad={info.get('test_pattern_first_bad_offset', '')}"
-                        ),
-                    ))
-            elif force_linear_pattern_check and info.get("test_pattern_ok") is False:
-                linear_pattern_fail += 1
-                events.append(make_event(
-                    "LEGACY_LINEAR_PATTERN_FAIL",
-                    info["lba"],
-                    seq=seq,
-                    boot=boot,
-                    value=info.get("test_pattern_mismatch_count"),
-                    detail=(
-                        f"mismatch={info.get('test_pattern_mismatch_count', '')}, "
-                        f"first_bad={info.get('test_pattern_first_bad_offset', '')}"
-                    ),
-                ))
+        if assume_dummy_pattern and info.get("test_pattern_ok") is False:
+            pattern_fail += 1
+            events.append(make_event(
+                "PATTERN_FAIL",
+                info["lba"],
+                seq=seq,
+                boot=boot,
+                value=info.get("test_pattern_mismatch_count"),
+                detail=(
+                    f"mismatch={info.get('test_pattern_mismatch_count', '')}, "
+                    f"first_bad={info.get('test_pattern_first_bad_offset', '')}"
+                ),
+            ))
 
         if previous_data is not None:
             prev_seq = safe_int(previous_data.get("seq"))
@@ -1294,19 +1128,17 @@ def analyze_infos(infos: list[dict], stall_threshold_ms: int, assume_dummy_patte
 
         previous_data = info
 
-    integrity_fail_total = payload_crc_fail + block_crc_fail + linear_pattern_fail + dummy_magic_fail
+    unknown_in_data_area = 0
+    if inferred_data_start_lba is not None:
+        unknown_in_data_area = sum(1 for info in unknown_infos if info["lba"] >= inferred_data_start_lba)
 
     judgements = []
     if len(data_infos) == 0 and len(unknown_infos) > 0:
         judgements.append("유효 data block이 없고 unknown이 많다. 4bit 배선/DAT lane/버스 무결성 먼저 의심.")
-    if integrity_fail_total > 0 and missing_seq_blocks == 0 and actual_lba_gap_count == 0:
-        judgements.append("seq/LBA는 이어지는데 payload 검증이 실패한다. 상태 전환보다 버스/배선/클럭 무결성 쪽 가능성이 크다.")
-    if latest_super is not None and unknown_before_next_data_lba == 0 and unknown_after_next_data_lba > 0:
-        judgements.append("latest superblock 기준 next_data_lba 뒤쪽 unknown은 아직 안 쓴 tail로 보는 게 맞다.")
-    if dummy_mode_count > 0 and integrity_fail_total == 0:
-        judgements.append("현재 payload는 dummy packet 포맷으로 보이고, 기존 linear test parser가 오판했을 가능성이 크다.")
-    if (tick_stall_count + embedded_stall_count) > 0 and integrity_fail_total == 0:
-        judgements.append("연속성/CRC는 유지되고 stall만 보인다. ping-pong staging과 SD DMA 확장을 계속 진행해도 된다.")
+    if (payload_crc_fail + block_crc_fail + pattern_fail) > 0 and missing_seq_blocks == 0 and actual_lba_gap_count == 0:
+        judgements.append("seq/LBA는 이어지는데 내용이 깨진다. 상태 전환보다 버스/배선/클럭 무결성 쪽 가능성이 크다.")
+    if (tick_stall_count + embedded_stall_count) > 0 and (payload_crc_fail + block_crc_fail + pattern_fail) == 0:
+        judgements.append("연속성은 유지되고 stall만 보인다. ping-pong staging과 SD DMA 준비를 진행해도 된다.")
     if boot_change_count > 0:
         judgements.append("boot_count 변화가 있다. reset/timeout/re-init 흔적과 에러 핸들러 경로를 확인하는 게 좋다.")
     if not judgements:
@@ -1324,19 +1156,11 @@ def analyze_infos(infos: list[dict], stall_threshold_ms: int, assume_dummy_patte
         lines.append(f"  {kind}: {count}")
     lines.append("")
 
-    lines.append("[Payload]")
-    lines.append(f"  dummy_packets={dummy_mode_count}")
-    lines.append(f"  linear_test={linear_mode_count}")
-    lines.append(f"  sensor_dma={sensor_dma_mode_count}")
-    lines.append(f"  unknown_mode={unknown_payload_mode_count}")
-    lines.append("")
-
     lines.append("[Continuity]")
     lines.append(f"  valid_data_blocks={len(data_infos)}")
     lines.append(f"  valid_superblocks={len(super_infos)}")
     lines.append(f"  unknown_blocks={len(unknown_infos)}")
-    lines.append(f"  unknown_before_next_data_lba={unknown_before_next_data_lba}")
-    lines.append(f"  unknown_after_next_data_lba={unknown_after_next_data_lba}")
+    lines.append(f"  unknown_in_data_area={unknown_in_data_area}")
     lines.append(f"  boot_changes={boot_change_count}")
     lines.append(f"  seq_gap_events={seq_gap_count}")
     lines.append(f"  missing_seq_blocks_est={missing_seq_blocks}")
@@ -1359,9 +1183,10 @@ def analyze_infos(infos: list[dict], stall_threshold_ms: int, assume_dummy_patte
     lines.append("[Integrity]")
     lines.append(f"  payload_crc_fail={payload_crc_fail}")
     lines.append(f"  block_crc_fail={block_crc_fail}")
-    lines.append(f"  dummy_packet_magic_fail={dummy_magic_fail}")
-    lines.append(f"  linear_pattern_fail={linear_pattern_fail}")
-    lines.append(f"  legacy_linear_pattern_forced={force_linear_pattern_check}")
+    if assume_dummy_pattern:
+        lines.append(f"  test_pattern_fail={pattern_fail} / {len(data_infos)} ({pct_text(pattern_fail, len(data_infos))})")
+    else:
+        lines.append("  test_pattern_fail=skipped (dummy pattern check OFF)")
     lines.append("")
 
     if latest_super is not None:
@@ -1401,7 +1226,7 @@ class App:
         self.analysis_start_var = tk.StringVar(value="0")
         self.analysis_end_var = tk.StringVar(value="63")
         self.analysis_stall_threshold_var = tk.StringVar(value="20")
-        self.analysis_assume_pattern_var = tk.BooleanVar(value=False)
+        self.analysis_assume_pattern_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="대기 중")
         self.drive_info_var = tk.StringVar(value="")
         self.progress_var = tk.DoubleVar(value=0.0)
@@ -1560,7 +1385,7 @@ class App:
 
         ttk.Checkbutton(
             analysis_controls,
-            text="Force legacy linear pattern check",
+            text="Assume dummy payload pattern",
             variable=self.analysis_assume_pattern_var,
         ).grid(row=1, column=2, columnspan=2, sticky="w", pady=(8, 0))
 
@@ -1573,7 +1398,7 @@ class App:
 
         ttk.Label(
             analysis_controls,
-            text="stall은 tick delta와 on-block cycle time 둘 다 본다. legacy linear pattern 검사는 old test payload일 때만 강제로 켜면 된다.",
+            text="stall은 tick delta와 on-block cycle time 둘 다 본다. dummy pattern 검사는 현재 테스트 payload용이다.",
             foreground="#555555",
         ).grid(row=2, column=0, columnspan=6, sticky="w", pady=(8, 0))
 
