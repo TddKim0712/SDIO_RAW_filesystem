@@ -1,0 +1,6 @@
+../sdrec/source/sdrec_source_dummy_cpu.c:5:13:sdrec_dummy_cpu_source_fill_packet	32	static
+../sdrec/source/sdrec_source_dummy_cpu.c:28:13:sdrec_dummy_cpu_source_reset_ctx	16	static
+../sdrec/source/sdrec_source_dummy_cpu.c:33:30:sdrec_dummy_cpu_source_poll_thunk	16	static
+../sdrec/source/sdrec_source_dummy_cpu.c:46:6:sdrec_dummy_cpu_source_init_defaults	16	static
+../sdrec/source/sdrec_source_dummy_cpu.c:58:6:sdrec_dummy_cpu_source_reset	16	static
+../sdrec/source/sdrec_source_dummy_cpu.c:69:23:sdrec_dummy_cpu_source_poll	88	static

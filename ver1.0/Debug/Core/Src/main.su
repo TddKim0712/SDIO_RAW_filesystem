@@ -1,0 +1,9 @@
+../Core/Inc/app_sdrec_profile.h:33:20:AppSdrec_FillRuntimeCfg	16	static
+../Core/Inc/app_sdrec_profile.h:57:20:AppSdrec_ConfigWaveTable	16	static
+../Core/Src/main.c:24:13:App_Init	8	static
+../Core/Src/main.c:35:13:App_Fatal	16	static
+../Core/Src/main.c:49:13:App_PrintCommitReport	88	static
+../Core/Src/main.c:75:5:__io_putchar	16	static
+../Core/Src/main.c:81:5:main	72	static
+../Core/Src/main.c:141:6:SystemClock_Config	88	static
+../Core/Src/main.c:191:6:Error_Handler	4	static,ignoring_inline_asm

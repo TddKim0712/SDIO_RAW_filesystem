@@ -1,0 +1,9 @@
+../Core/Inc/app_sdrec_profile.h:33:20:AppSdrec_FillRuntimeCfg	1
+../Core/Inc/app_sdrec_profile.h:57:20:AppSdrec_ConfigWaveTable	1
+../Core/Src/main.c:24:13:App_Init	1
+../Core/Src/main.c:35:13:App_Fatal	1
+../Core/Src/main.c:49:13:App_PrintCommitReport	3
+../Core/Src/main.c:75:5:__io_putchar	1
+../Core/Src/main.c:81:5:main	6
+../Core/Src/main.c:141:6:SystemClock_Config	3
+../Core/Src/main.c:191:6:Error_Handler	1

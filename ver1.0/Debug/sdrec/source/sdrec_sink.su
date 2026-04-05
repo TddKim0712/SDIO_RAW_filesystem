@@ -1,0 +1,17 @@
+../sdrec/source/sdrec_sink.c:5:12:sdrec_sink_find_latest_superblock	32	static
+../sdrec/source/sdrec_sink.c:44:13:sdrec_sink_fill_step_info	32	static
+../sdrec/source/sdrec_sink.c:79:28:sdrec_sink_complete_write	40	static
+../sdrec/source/sdrec_sink.c:112:13:sdrec_sink_fill_burst_step_info	32	static
+../sdrec/source/sdrec_sink.c:147:13:sdrec_sink_commit_burst_state	40	static
+../sdrec/source/sdrec_sink.c:173:28:sdrec_sink_finish_async_burst	80	static
+../sdrec/source/sdrec_sink.c:224:6:sdrec_sink_init_defaults	16	static
+../sdrec/source/sdrec_sink.c:238:6:sdrec_sink_set_payload_flags	16	static
+../sdrec/source/sdrec_sink.c:249:6:sdrec_sink_set_runtime_config	32	static
+../sdrec/source/sdrec_sink.c:268:21:sdrec_sink_open	536	static
+../sdrec/source/sdrec_sink.c:318:21:sdrec_sink_write_payload	144	static
+../sdrec/source/sdrec_sink.c:405:5:sdrec_sink_async_busy	16	static
+../sdrec/source/sdrec_sink.c:415:10:sdrec_sink_get_max_contiguous_write_blocks	16	static
+../sdrec/source/sdrec_sink.c:432:21:sdrec_sink_begin_async_batch	120	static
+../sdrec/source/sdrec_sink.c:533:21:sdrec_sink_begin_async_single	32	static
+../sdrec/source/sdrec_sink.c:549:21:sdrec_sink_poll_async	24	static
+../sdrec/source/sdrec_sink.c:625:6:sdrec_sink_fill_test_payload	32	static

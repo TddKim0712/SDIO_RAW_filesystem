@@ -1,0 +1,10 @@
+12:55:19 **** Incremental Build of configuration Debug for project ARES26_sdraw_filesystem_ver_1.0 ****
+make -j16 all 
+arm-none-eabi-size  ARES26_sdraw_filesystem_ver_1.0.elf 
+   text	   data	    bss	    dec	    hex	filename
+  37612	    108	   9676	  47396	   b924	ARES26_sdraw_filesystem_ver_1.0.elf
+Finished building: default.size.stdout
+ 
+
+12:55:20 Build Finished. 0 errors, 0 warnings. (took 566ms)
+

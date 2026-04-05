@@ -1,0 +1,4 @@
+../sdrec/source/sdrec_source_api.c:4:6:sdrec_source_link_attach	24	static
+../sdrec/source/sdrec_source_api.c:17:6:sdrec_source_link_detach	16	static
+../sdrec/source/sdrec_source_api.c:28:6:sdrec_source_link_reset	16	static
+../sdrec/source/sdrec_source_api.c:38:23:sdrec_source_link_poll	16	static

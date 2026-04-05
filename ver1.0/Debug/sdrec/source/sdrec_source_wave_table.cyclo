@@ -1,0 +1,9 @@
+../sdrec/source/sdrec_source_wave_table.c:6:13:sdrec_wave_table_source_reset_ctx	1
+../sdrec/source/sdrec_source_wave_table.c:11:30:sdrec_wave_table_source_poll_thunk	1
+../sdrec/source/sdrec_source_wave_table.c:24:6:sdrec_wave_table_source_init_defaults	2
+../sdrec/source/sdrec_source_wave_table.c:38:6:sdrec_wave_table_source_reset	3
+../sdrec/source/sdrec_source_wave_table.c:50:6:sdrec_wave_table_source_set_table	4
+../sdrec/source/sdrec_source_wave_table.c:63:6:sdrec_wave_table_source_copy_samples	6
+../sdrec/source/sdrec_source_wave_table.c:83:6:sdrec_wave_table_source_advance	3
+../sdrec/source/sdrec_source_wave_table.c:96:6:sdrec_wave_table_source_build_packet	4
+../sdrec/source/sdrec_source_wave_table.c:124:23:sdrec_wave_table_source_poll	7

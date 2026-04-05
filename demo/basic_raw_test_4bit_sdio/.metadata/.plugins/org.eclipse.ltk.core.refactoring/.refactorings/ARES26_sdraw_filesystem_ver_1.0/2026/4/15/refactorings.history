@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename resource &apos;ARES26_sdraw_filesystem_ver_1.0/sdrec/include/sdrec_build_config.h&apos; to &apos;sdrec_build_config0.h&apos;" description="Rename resource &apos;sdrec_build_config.h&apos;" flags="7" id="org.eclipse.ltk.core.refactoring.rename.resource" input="sdrec/include/sdrec_build_config.h" name="sdrec_build_config0.h" stamp="1775359354879" updateReferences="true"/>
+</session>

@@ -1,0 +1,3 @@
+../sdrec/source/sdrec_crc32.c:3:10:sdrec_crc32_update	40	static
+../sdrec/source/sdrec_crc32.c:34:10:sdrec_crc32_finalize	16	static
+../sdrec/source/sdrec_crc32.c:39:10:sdrec_crc32_compute	16	static

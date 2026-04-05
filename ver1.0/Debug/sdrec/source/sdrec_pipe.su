@@ -1,0 +1,14 @@
+../sdrec/source/sdrec_pipe.c:5:13:sdrec_pipe_reset_slot	16	static
+../sdrec/source/sdrec_pipe.c:16:12:sdrec_pipe_find_slot	32	static
+../sdrec/source/sdrec_pipe.c:42:13:sdrec_pipe_note_ready_slot	16	static
+../sdrec/source/sdrec_pipe.c:56:13:sdrec_pipe_requeue_inflight	32	static
+../sdrec/source/sdrec_pipe.c:88:13:sdrec_pipe_release_inflight	24	static
+../sdrec/source/sdrec_pipe.c:114:17:sdrec_pipe_collect_ready_slots	40	static
+../sdrec/source/sdrec_pipe.c:160:6:sdrec_pipe_init_defaults	24	static
+../sdrec/source/sdrec_pipe.c:181:6:sdrec_pipe_reset_stats	16	static
+../sdrec/source/sdrec_pipe.c:195:6:sdrec_pipe_note_source_drop	16	static
+../sdrec/source/sdrec_pipe.c:205:21:sdrec_pipe_open	24	static
+../sdrec/source/sdrec_pipe.c:231:10:sdrec_pipe_acquire_ingress_ptr	32	static
+../sdrec/source/sdrec_pipe.c:276:5:sdrec_pipe_commit_ingress	32	static
+../sdrec/source/sdrec_pipe.c:321:5:sdrec_pipe_push_packet	32	static
+../sdrec/source/sdrec_pipe.c:352:21:sdrec_pipe_drain_to_card	72	static

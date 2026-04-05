@@ -1,0 +1,6 @@
+../sdrec/source/sdrec_runtime.c:4:6:sdrec_runtime_cfg_init_defaults	16	static
+../sdrec/source/sdrec_runtime.c:19:6:sdrec_runtime_init_defaults	16	static
+../sdrec/source/sdrec_runtime.c:31:6:sdrec_runtime_attach_source	24	static
+../sdrec/source/sdrec_runtime.c:48:6:sdrec_runtime_detach_source	16	static
+../sdrec/source/sdrec_runtime.c:58:21:sdrec_runtime_start	16	static
+../sdrec/source/sdrec_runtime.c:84:21:sdrec_runtime_poll	32	static

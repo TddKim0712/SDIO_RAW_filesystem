@@ -1,0 +1,14 @@
+../sdrec/source/sdrec_layout_v3.c:6:17:sdrec_superblock_block_crc32	1
+../sdrec/source/sdrec_layout_v3.c:16:17:sdrec_data_block_crc32	1
+../sdrec/source/sdrec_layout_v3.c:26:6:sdrec_layout_cfg_init_defaults	2
+../sdrec/source/sdrec_layout_v3.c:41:6:sdrec_layout_state_reset	2
+../sdrec/source/sdrec_layout_v3.c:59:6:sdrec_layout_state_restore_from_superblock	4
+../sdrec/source/sdrec_layout_v3.c:88:10:sdrec_layout_wrap_lba	4
+../sdrec/source/sdrec_layout_v3.c:110:5:sdrec_layout_is_newer_seq	1
+../sdrec/source/sdrec_layout_v3.c:116:10:sdrec_layout_current_superblock_lba	4
+../sdrec/source/sdrec_layout_v3.c:127:5:sdrec_layout_should_checkpoint	4
+../sdrec/source/sdrec_layout_v3.c:138:6:sdrec_layout_note_commit	8
+../sdrec/source/sdrec_layout_v3.c:182:6:sdrec_pack_superblock_v3	4
+../sdrec/source/sdrec_layout_v3.c:220:23:sdrec_check_superblock_v3	14
+../sdrec/source/sdrec_layout_v3.c:282:6:sdrec_pack_data_block_v3	6
+../sdrec/source/sdrec_layout_v3.c:327:23:sdrec_check_data_block_v3	9

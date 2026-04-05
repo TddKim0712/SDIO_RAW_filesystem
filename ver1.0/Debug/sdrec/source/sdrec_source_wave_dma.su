@@ -1,0 +1,8 @@
+../sdrec/source/sdrec_source_wave_dma.c:5:13:sdrec_wave_dma_source_reset_ctx	16	static
+../sdrec/source/sdrec_source_wave_dma.c:10:30:sdrec_wave_dma_source_poll_thunk	16	static
+../sdrec/source/sdrec_source_wave_dma.c:23:6:sdrec_wave_dma_source_init_defaults	16	static
+../sdrec/source/sdrec_source_wave_dma.c:34:6:sdrec_wave_dma_source_reset	16	static
+../sdrec/source/sdrec_source_wave_dma.c:46:22:sdrec_wave_dma_source_get_buffer	16	static
+../sdrec/source/sdrec_source_wave_dma.c:57:6:sdrec_wave_dma_source_refill	24	static
+../sdrec/source/sdrec_source_wave_dma.c:72:6:sdrec_wave_dma_source_mark_ready	24	static
+../sdrec/source/sdrec_source_wave_dma.c:89:23:sdrec_wave_dma_source_poll	24	static
